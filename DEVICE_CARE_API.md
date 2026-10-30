@@ -29,6 +29,9 @@ Subscriptions are released through Home Assistant's standard `unsubscribe_events
   "model": "M1-or-null",
   "integration": "mqtt-or-null",
   "integrations": ["mqtt"],
+  "device_type": "sensor",
+  "capabilities": ["motion"],
+  "activity": null,
   "entities": [{
     "entity_id": "binary_sensor.hall_motion",
     "name": "Hall motion",
@@ -51,7 +54,9 @@ Subscriptions are released through Home Assistant's standard `unsubscribe_events
 }
 ```
 
-Signal `meaning` is `active`, `inactive`, `unavailable`, `unknown`, `missing`, or `expected_off`; battery binary sensors may also use `low` or `ok`. Numeric battery values (percent or voltage) retain `value` and `unit` independently from `meaning`. Device health is `online`, `offline`, `partial`, `unknown`, or `expected_off`. Explicit connectivity entities can report online/offline. A problem-class entity reporting `on` indicates a device fault and yields `partial`; it does not establish loss of connectivity. Without a connectivity entity, a current state on an enabled operational entity is positive evidence of state availability, but an off state is not an outage. This is not a heartbeat guarantee. Diagnostic telemetry such as RSSI/LQI and unknown/unavailable states do not establish health. Devices without reliable current state remain unknown.
+Signal `meaning` is `active`, `inactive`, `unavailable`, `unknown`, `missing`, `expected_off`, or `measured`; battery binary sensors may also use `low` or `ok`. Numeric battery values (percent or voltage) retain `value` and `unit` and use `meaning: measured`. When both battery percentage and voltage exist, a unique percentage reading is preferred; multiple same-priority readings remain ambiguous until the administrator selects a source. Device health is `online`, `offline`, `partial`, `unknown`, or `expected_off`. Explicit connectivity entities can report online/offline. A problem-class entity reporting `on` indicates a device fault and yields `partial`; it does not establish loss of connectivity. Without a connectivity entity, a current state on an enabled binary sensor or controllable entity is positive evidence that Home Assistant has a usable state, but an off state is not an outage. This is not a heartbeat guarantee. Battery/voltage telemetry and event timestamps do not establish current reachability. Devices without such evidence remain unknown with `health_reason: no_reachability_source`.
+
+`device_type` is inferred from entity domains/classes (`remote`, `light`, `switch`, `camera`, `cover`, `climate`, `fan`, `lock`, `sensor`, `other`). `capabilities` lists available entity roles such as `activity`, `battery`, `brightness`, `connectivity`, `control`, `motion`, `occupancy`, and `power_state`. `activity` is `null` or `{entity_id, event_type, last_event_at}`. `last_event_at` is included only when parsed from the event entity state or an explicit event timestamp attribute. Entity `last_updated`/`last_changed` timestamps are never treated as user activity. A remote can therefore show its last recorded press while its health stays `unknown` and its current reachability stays unclaimed. `call_entity` rejects a CONFIG action when the entity is currently `unknown` or `unavailable`, even if it was usable when the panel loaded.
 
 ## Preferences
 

@@ -29,7 +29,7 @@ let registered;
 before(async () => { registered = await import('../../custom_components/device_care/frontend/device-care.js'); });
 after(async () => { await browserWindow.happyDOM.close(); });
 
-function mount({ failure = false } = {}) {
+function mount({ failure = false, slowSave = false } = {}) {
   let devices = structuredClone(initialDevices);
   let preferences = defaultPreferences();
   let updateCallback;
@@ -42,7 +42,7 @@ function mount({ failure = false } = {}) {
         if (failure) throw new Error('backend unavailable');
         return { devices: structuredClone(devices), all_devices: structuredClone(devices), areas: [{ id:'hall', name:'Hall' }], floors: [{ id:'floor-1', name:'Ground floor' }], labels: [{ id:'security', name:'Security' }], preferences: structuredClone(preferences), monitoring_since:'2026-10-27T12:00:00Z', capabilities:{reports:true,settings:true}, is_admin:true };
       }
-      if (message.type === 'device_care/set_preferences') { preferences = { ...preferences, ...message.preferences }; return { preferences: structuredClone(preferences) }; }
+      if (message.type === 'device_care/set_preferences') { if (slowSave) await new Promise((resolve) => setTimeout(resolve, 100)); preferences = { ...preferences, ...message.preferences }; return { preferences: structuredClone(preferences) }; }
       if (message.type === 'device_care/call_entity') return { success:true };
       return {};
     },
@@ -130,7 +130,15 @@ test('shows numeric battery unknown values but never stale unavailable values', 
   app.devices = [sensor, ...rest];
   app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'state' } });
   await settle(app.element, 120);
-  assert.match(app.element.shadowRoot.textContent, /Pil 2\.7 V · durum bilinmiyor/);
+  assert.match(app.element.shadowRoot.textContent, /Pil 2\.7 V/);
+  assert.doesNotMatch(app.element.shadowRoot.textContent, /Pil 2\.7 V · durum bilinmiyor/);
+  const fullBattery = { ...sensor, signals:{ ...sensor.signals, battery:{ entity_id:'sensor.battery_percent',state:'100',value:100,unit:'%',meaning:'measured' } } };
+  app.devices = [fullBattery, ...rest];
+  app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'state' } });
+  await settle(app.element,120);
+  const fullBatteryPill = [...app.element.shadowRoot.querySelectorAll('.signal-pill')].find((pill) => pill.textContent.includes('Pil 100 %'));
+  assert.ok(fullBatteryPill);
+  assert.ok(!fullBatteryPill.classList.contains('unknown'));
   const unavailable = { ...sensor, signals:{ ...sensor.signals, battery:{ ...sensor.signals.battery,state:'unavailable',value:2.7,meaning:'unavailable' } } };
   app.devices = [unavailable, ...rest];
   app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'state' } });
@@ -172,5 +180,56 @@ test('offers battery voltage sources and excludes diagnostic RSSI from connectiv
   const integrationScope = [...app.element.shadowRoot.querySelectorAll('.settings-panel select')].find((select) => [...select.options].some((option) => option.value === 'matter'));
   assert.ok(integrationScope);
   assert.ok([...integrationScope.options].some((option) => option.value === 'matter'));
+  app.element.remove();
+});
+
+test('renders capability-aware status for lights, switches, and remotes without inventing reachability', async () => {
+  const app = mount(); await settle(app.element);
+  const base = app.devices[0];
+  app.devices = [
+    { ...base, id:'lamp', name:'Desk lamp', device_type:'light', entities:[{ entity_id:'light.desk',name:'Desk lamp',state:'on',domain:'light',device_class:null,entity_category:null,unit:null,attributes:{ brightness:128 },disabled:false }], signals:{ motion:null,occupancy:null,battery:null,connectivity:null } },
+    { ...base, id:'relay', name:'Relay', device_type:'switch', entities:[{ entity_id:'switch.relay',name:'Relay',state:'off',domain:'switch',device_class:null,entity_category:null,unit:null,attributes:{},disabled:false }], signals:{ motion:null,occupancy:null,battery:null,connectivity:null } },
+    { ...base, id:'remote', name:'Remote', device_type:'remote', activity:{ entity_id:'event.remote_button',event_type:'button_1_single',last_event_at:'2026-10-30T10:00:00Z' }, health:'unknown', health_reason:'no_reachability_source', entities:[], signals:{ motion:null,occupancy:null,battery:null,connectivity:null } },
+  ];
+  app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'registry' } }); await settle(app.element,120);
+  const root = app.element.shadowRoot;
+  assert.match(root.textContent, /Açık · %50/);
+  assert.match(root.textContent, /Kapalı/);
+  assert.match(root.textContent, /Anlık bağlantı bilgisi yok/);
+  assert.match(root.textContent, /Erişilebilirlik bilgisi yok/);
+  assert.match(root.textContent, /Son basış/);
+  const remoteRow = [...root.querySelectorAll('tbody tr')].find((row) => row.textContent.includes('Remote'));
+  assert.match(remoteRow.textContent, /Erişilebilirlik bilgisi yok/);
+  remoteRow.click(); await settle(app.element);
+  assert.match(root.querySelector('.drawer')?.textContent ?? '', /Erişilebilirlik bilgisi yok/);
+  assert.ok(root.querySelector('.drawer-head .device-glyph svg'));
+  app.element.remove();
+});
+
+test('save button uses Lit interpolation and submits preferences while showing saving state', async () => {
+  const app = mount({ slowSave:true }); await settle(app.element);
+  app.element.shadowRoot.querySelector('button[aria-label="Düzenle"], .top-actions button')?.click(); await settle(app.element);
+  const save = [...app.element.shadowRoot.querySelectorAll('button')].find((button) => button.textContent.includes('Değişiklikleri kaydet'));
+  assert.ok(save);
+  assert.equal(save.textContent.trim(), 'Değişiklikleri kaydet');
+  save.click(); await settle(app.element);
+  const saving = [...app.element.shadowRoot.querySelectorAll('button')].find((button) => button.textContent.includes('Kaydediliyor'));
+  assert.ok(saving);
+  assert.equal(saving.disabled, true);
+  await settle(app.element,120);
+  const saveCall = app.calls.find((call) => call.type === 'device_care/set_preferences');
+  assert.equal(saveCall.preferences.scope, 'all');
+  assert.equal(saveCall.preferences.layout, 'inventory');
+  app.element.remove();
+});
+
+test('area column and drawer stay tied to actual area when grouping is disabled; room grid aligns cards to top', async () => {
+  const app = mount(); await settle(app.element);
+  app.element.data = { ...app.element.data, preferences:{ ...app.element.data.preferences, group_by:'none' } };
+  await settle(app.element);
+  assert.equal(app.element.shadowRoot.querySelector('tbody tr td:nth-child(3)')?.textContent.trim(), 'Hall');
+  app.element.shadowRoot.querySelector('tbody tr').click(); await settle(app.element);
+  assert.equal([...app.element.shadowRoot.querySelectorAll('.detail-row')].find((row) => row.textContent.includes('Oda'))?.textContent, 'OdaHall');
+  assert.match(registered.DeviceCarePanel.styles.cssText, /align-items:start/);
   app.element.remove();
 });

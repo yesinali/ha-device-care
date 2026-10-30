@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .const import SIGNAL_CLASSES
 from .health import derive_health, signal_meaning
@@ -83,18 +85,8 @@ def build_inventory(hass: Any, preferences: dict[str, Any]) -> dict[str, Any]:
         did = device_id
         selected = override_map.get(ident, {})
         signals: dict[str, dict[str, Any] | None] = {}
-        for kind, classes in SIGNAL_CLASSES.items():
-            candidates = [e for e in items if e["device_class"] in classes]
-            if kind == "battery":
-                candidates.extend(e for e in items if _is_battery_voltage(e) and e not in candidates)
-            forced = selected.get(kind)
-            if forced:
-                candidates = [e for e in items if e["entity_id"] == forced]
-            # A battery class may be exposed as either a numeric sensor (level
-            # or voltage) or a binary sensor (low battery). Don't silently pick
-            # an arbitrary source when a device has several candidates.
-            candidates = sorted(candidates, key=lambda e: e["entity_id"])
-            signal = candidates[0] if len(candidates) == 1 else None
+        for kind in SIGNAL_CLASSES:
+            signal = _select_signal(kind, items, selected.get(kind))
             signals[kind] = ({
                 "entity_id": signal["entity_id"], "state": signal["state"],
                 "value": _signal_value(kind, signal),
@@ -107,12 +99,14 @@ def build_inventory(hass: Any, preferences: dict[str, Any]) -> dict[str, Any]:
             health, reason = "expected_off", "configured_expected_off"
         else:
             health, reason = derive_health(items, primary, expected_ids)
+        activity = _latest_event_activity(items, datetime.now(UTC), getattr(hass.config, "time_zone", None))
         area = area_by_id.get(area_id)
         floor_id = getattr(area, "floor_id", None) if area else None
         labels_ids = set(getattr(device, "labels", []) or []) if device else set()
         for entry in entity_entries:
             labels_ids.update(getattr(entry, "labels", []) or [])
         platforms = {getattr(entry, "platform", None) for entry in entity_entries if getattr(entry, "platform", None)}
+        device_type, capabilities = _device_capabilities(items, signals)
         return {
             "id": ident, "device_id": did, "name": name,
             "area_id": area_id, "floor_id": floor_id,
@@ -122,6 +116,7 @@ def build_inventory(hass: Any, preferences: dict[str, Any]) -> dict[str, Any]:
             "integration": next(iter(platforms)) if len(platforms) == 1 else None,
             "integrations": sorted(platforms),
             "entities": items, "signals": signals, "health": health, "health_reason": reason,
+            "device_type": device_type, "capabilities": capabilities, "activity": activity,
         }
 
     registered_devices = {}
@@ -196,6 +191,8 @@ def _signal_meaning(kind: str, signal: dict[str, Any], expected_off: bool) -> st
             return "low"
         if signal["state"] == "off":
             return "ok"
+    if kind == "battery" and isinstance(_signal_value(kind, signal), (int, float)):
+        return "measured"
     return signal_meaning(signal["state"], expected_off)
 
 
@@ -205,6 +202,151 @@ def _is_battery_voltage(entity: dict[str, Any]) -> bool:
     label = f"{entity.get('entity_id', '')} {entity.get('name', '')}".casefold()
     unit = str(entity.get("unit") or "").casefold()
     return "battery" in label and unit in {"%", "v", "mv"}
+
+
+def is_battery_source(entity: dict[str, Any]) -> bool:
+    return entity.get("device_class") == "battery" or _is_battery_voltage(entity)
+
+
+def is_valid_signal_source(kind: str, entity: dict[str, Any]) -> bool:
+    if kind == "battery":
+        return is_battery_source(entity)
+    return kind in SIGNAL_CLASSES and entity.get("device_class") in SIGNAL_CLASSES[kind]
+
+
+def _select_battery_source(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Prefer one percentage reading, then a binary low-battery sensor, then voltage.
+
+    Ambiguous candidates at the same priority stay unselected. A saved source
+    override is handled by the caller and always takes precedence.
+    """
+    percent = [e for e in candidates if _battery_priority(e) == 0]
+    binary = [e for e in candidates if _battery_priority(e) == 1]
+    voltage = [e for e in candidates if _battery_priority(e) == 2]
+    for group in (percent, binary, voltage):
+        if not group:
+            continue
+        if len(group) == 1:
+            return group[0]
+        available = [e for e in group if _signal_value("battery", e) is not None]
+        if len(available) == 1:
+            return available[0]
+        return None
+    return None
+
+
+def _select_signal(
+    kind: str, entities: list[dict[str, Any]], override_id: str | None = None
+) -> dict[str, Any] | None:
+    """Select only role-compatible sources; a bad saved override never falls back."""
+    if override_id:
+        return next(
+            (e for e in entities if e["entity_id"] == override_id and is_valid_signal_source(kind, e)),
+            None,
+        )
+    classes = SIGNAL_CLASSES[kind]
+    candidates = [e for e in entities if e["device_class"] in classes]
+    if kind == "battery":
+        candidates.extend(e for e in entities if _is_battery_voltage(e) and e not in candidates)
+        return _select_battery_source(candidates)
+    candidates.sort(key=lambda e: e["entity_id"])
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _battery_priority(entity: dict[str, Any]) -> int | None:
+    unit = str(entity.get("unit") or "").casefold()
+    if entity.get("domain") == "binary_sensor" and entity.get("device_class") == "battery":
+        return 1
+    if unit in {"%", "percent", "percentage"}:
+        return 0
+    if entity.get("device_class") == "battery" and unit not in {"v", "mv"}:
+        return 0
+    if _is_battery_voltage(entity) or unit in {"v", "mv"} and "battery" in f"{entity.get('entity_id', '')} {entity.get('name', '')}".casefold():
+        return 2
+    return None
+
+
+def _parse_event_time(value: Any, now: datetime, timezone_name: str | None) -> datetime | None:
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+        return None
+    try:
+        parsed = datetime.fromtimestamp(value, UTC) if isinstance(value, (int, float)) else datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (ValueError, OverflowError, OSError):
+        return None
+    if parsed.tzinfo is None:
+        try:
+            parsed = parsed.replace(tzinfo=ZoneInfo(timezone_name)) if timezone_name else parsed.replace(tzinfo=UTC)
+        except (ZoneInfoNotFoundError, ValueError):
+            parsed = parsed.replace(tzinfo=UTC)
+    parsed = parsed.astimezone(UTC)
+    if parsed < datetime(2000, 1, 1, tzinfo=UTC) or parsed > now + timedelta(minutes=5):
+        return None
+    return parsed
+
+
+def _latest_event_activity(
+    entities: list[dict[str, Any]], now: datetime, timezone_name: str | None
+) -> dict[str, Any] | None:
+    """Describe event entities only from explicit event timestamps, never HA update time."""
+    events = sorted((e for e in entities if e["domain"] == "event" and not e.get("disabled")), key=lambda e: e["entity_id"])
+    if not events:
+        return None
+    observed: list[tuple[datetime, dict[str, Any], str | None]] = []
+    undated: list[tuple[dict[str, Any], str | None]] = []
+    time_keys = ("last_event_at", "event_timestamp", "event_time", "timestamp", "last_triggered", "last_event")
+    for entity in events:
+        attrs = entity.get("attributes", {})
+        event_time = _parse_event_time(entity.get("state"), now, timezone_name)
+        if event_time is None:
+            for key in time_keys:
+                event_time = _parse_event_time(attrs.get(key), now, timezone_name)
+                if event_time is not None:
+                    break
+        event_type = attrs.get("event_type") or attrs.get("event")
+        if not isinstance(event_type, str) or not event_type:
+            state = entity.get("state")
+            event_type = state if isinstance(state, str) and _parse_event_time(state, now, timezone_name) is None else None
+        if event_time is None:
+            undated.append((entity, event_type))
+        else:
+            observed.append((event_time, entity, event_type))
+    if observed:
+        event_time, entity, event_type = max(observed, key=lambda item: item[0])
+        return {"entity_id": entity["entity_id"], "event_type": event_type, "last_event_at": event_time.isoformat()}
+    entity, event_type = undated[0]
+    return {"entity_id": entity["entity_id"], "event_type": event_type, "last_event_at": None}
+
+
+def _device_capabilities(
+    entities: list[dict[str, Any]], signals: dict[str, dict[str, Any] | None]
+) -> tuple[str, list[str]]:
+    domains = {e["domain"] for e in entities if not e.get("disabled")}
+    classes = {e["device_class"] for e in entities if not e.get("disabled") and e.get("device_class")}
+    if "event" in domains or "button" in classes:
+        device_type = "remote"
+    else:
+        device_type = next((d for d in ("light", "switch", "camera", "cover", "climate", "fan", "lock") if d in domains), "sensor" if domains & {"sensor", "binary_sensor"} else "other")
+    capabilities: set[str] = set()
+    capabilities.update(kind for kind, signal in signals.items() if signal is not None)
+    for kind, supported_classes in SIGNAL_CLASSES.items():
+        if any(not e.get("disabled") and e.get("device_class") in supported_classes for e in entities):
+            capabilities.add(kind)
+    if any(_is_battery_voltage(e) for e in entities if not e.get("disabled")):
+        capabilities.add("battery")
+    if "event" in domains:
+        capabilities.add("activity")
+    if domains & {"light", "switch", "fan", "climate", "cover", "lock", "media_player", "vacuum", "valve"}:
+        capabilities.update({"power_state", "control"})
+    if any(
+        e.get("attributes", {}).get("brightness") is not None
+        or (
+            isinstance(e.get("attributes", {}).get("supported_color_modes"), (list, tuple, set))
+            and any(mode != "onoff" for mode in e["attributes"]["supported_color_modes"])
+        )
+        for e in entities
+    ):
+        capabilities.add("brightness")
+    return device_type, sorted(capabilities)
 
 
 def is_low_battery(signal: dict[str, Any] | None) -> bool:

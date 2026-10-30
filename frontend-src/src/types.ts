@@ -1,4 +1,4 @@
-export type SignalMeaning = 'active' | 'inactive' | 'unavailable' | 'unknown' | 'missing' | 'expected_off' | 'low' | 'ok';
+export type SignalMeaning = 'active' | 'inactive' | 'unavailable' | 'unknown' | 'missing' | 'expected_off' | 'low' | 'ok' | 'measured';
 export interface Signal { entity_id: string; state: string; value: number | string | null; unit: string | null; meaning: SignalMeaning }
 export interface DeviceEntity {
   entity_id: string; name: string; state: string; domain: string; device_class: string | null;
@@ -7,6 +7,8 @@ export interface DeviceEntity {
 export interface Device {
   id: string; device_id: string | null; name: string; area_id: string | null; floor_id: string | null; labels: string[];
   manufacturer: string | null; model: string | null; integration: string | null; integrations: string[]; entities: DeviceEntity[];
+  device_type?: 'remote' | 'light' | 'switch' | 'camera' | 'cover' | 'climate' | 'fan' | 'lock' | 'sensor' | 'other'; capabilities?: string[];
+  activity?: { entity_id: string; event_type: string | null; last_event_at: string | null } | null;
   signals: { motion: Signal | null; occupancy: Signal | null; battery: Signal | null; connectivity: Signal | null };
   health: 'online' | 'offline' | 'partial' | 'unknown' | 'expected_off'; health_reason: string | null;
 }

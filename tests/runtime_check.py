@@ -13,6 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import ifaddr
 
@@ -77,6 +78,7 @@ async def main() -> None:
         assert "device-care" in panels and panels["device-care"].require_admin
 
         from device_care.websocket_api import (
+            ws_call_entity,
             ws_get_data,
             ws_get_report,
             ws_set_preferences,
@@ -90,6 +92,25 @@ async def main() -> None:
         )
         await hass.async_block_till_done()
         assert len(guest.errors) == 2
+
+        from homeassistant.helpers import entity_registry
+        fake_registry = SimpleNamespace(
+            async_get=lambda _entity_id: SimpleNamespace(domain="switch", entity_category="config")
+        )
+        service_calls: list[tuple] = []
+        fake_hass = SimpleNamespace(
+            states=SimpleNamespace(get=lambda _entity_id: SimpleNamespace(state="unavailable", attributes={})),
+            services=SimpleNamespace(async_call=lambda *args, **kwargs: service_calls.append((args, kwargs))),
+        )
+        state_connection = Connection(is_admin=True)
+        with patch.object(entity_registry, "async_get", return_value=fake_registry):
+            await ws_call_entity.__wrapped__(
+                fake_hass,
+                state_connection,
+                {"id": 22, "type": "device_care/call_entity", "entity_id": "switch.test_config", "service": "turn_on"},
+            )
+        assert state_connection.errors and "unavailable" in state_connection.errors[0][-1]
+        assert service_calls == []
 
         admin = Connection(is_admin=True)
         ws_get_data(hass, admin, {"id": 3, "type": "device_care/get_data"})

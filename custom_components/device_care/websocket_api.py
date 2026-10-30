@@ -9,7 +9,8 @@ from homeassistant.components import websocket_api
 from homeassistant.core import callback
 
 from .const import DOMAIN, EVENT_UPDATED
-from .discovery import build_inventory, include_new_manual_devices
+from .discovery import build_inventory, include_new_manual_devices, is_valid_signal_source
+from .health import has_available_state
 from .history import report_window
 
 _LAYOUTS = {"inventory", "rooms"}
@@ -159,16 +160,8 @@ async def ws_set_preferences(hass, connection, msg):
                 if entity is None or hass.states.get(entity_id) is None:
                     connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Selected entity does not exist")
                     return
-                if role == "connectivity" and (
-                    entity.get("device_class") != "connectivity"
-                ):
-                    connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, "Connectivity source must be a connectivity entity")
-                    return
-                if role == "battery" and not (
-                    entity.get("device_class") == "battery"
-                    or (entity.get("domain") == "sensor" and "battery" in f"{entity.get('entity_id', '')} {entity.get('name', '')}".casefold() and str(entity.get("unit") or "").casefold() in {"%", "v", "mv"})
-                ):
-                    connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, "Battery source must be a battery or battery voltage/level entity")
+                if not is_valid_signal_source(role, entity):
+                    connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, f"Selected entity is not a valid {role} source")
                     return
     if "expected_off_rules" in patch:
         if not isinstance(patch["expected_off_rules"], list):
@@ -260,6 +253,9 @@ async def ws_call_entity(hass, connection, msg):
     state = hass.states.get(msg["entity_id"])
     if entity is None or state is None:
         connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Entity not found")
+        return
+    if not has_available_state(state):
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Entity state is currently unavailable")
         return
     if getattr(entity, "entity_category", None) != "config":
         connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "Only CONFIG entities can be controlled")

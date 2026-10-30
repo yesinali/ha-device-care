@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { DeviceCareApi } from './api';
 import type { CareData, Device, DeviceEntity, HomeAssistant, NamedItem, Preferences, Report, Signal } from './types';
+import brandIcon from './assets/brand-icon.png?inline';
 
 const icon = (name: string) => {
   const paths: Record<string, string> = {
@@ -10,6 +11,12 @@ const icon = (name: string) => {
     search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm5.5 12.5L21 21',
     check: 'm5 12 4 4L19 6', alert: 'M12 3 2 21h20L12 3zm0 6v5m0 3v.1',
     motion: 'M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1',
+    light: 'M9 18h6m-5 4h4m-5-8a6 6 0 1 1 6 0c-1 1-1 2-1 4h-4c0-2 0-3-1-4z',
+    switch: 'M4 7h16v10H4zM8 12h.01', remote: 'M8 3h8v18H8zM12 7h.01M10 11h4m-4 3h4m-4 3h4',
+    sensor: 'M4 12a8 8 0 0 1 16 0M7 12a5 5 0 0 1 10 0m-7 0a2 2 0 0 1 4 0m-2 4v4',
+    fan: 'M12 12c-1-3-1-8 2-9 3-1 4 3 1 7m-3 2c3-1 8-1 9 2 1 3-3 4-7 1m-2-3c1 3 1 8-2 9-3 1-4-3-1-7m3-2c-3 1-8 1-9-2-1-3 3-4 7-1',
+    lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4m-4 4v2', climate: 'M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0zM12 17v-7',
+    camera: 'M3 8h4l2-3h6l2 3h4v12H3zM12 11a3 3 0 1 0 0 6 3 3 0 0 0 0-6z', cover: 'M4 4h16v16H4zM8 8h8m-8 4h8m-8 4h8',
     battery: 'M2 8h18v9H2zM22 11v3M5 11v3', wifi: 'M2 8a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0m-11 4a5 5 0 0 1 8 0m-4 4h.01',
     close: 'M6 6l12 12M18 6 6 18', edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z',
     down: 'm6 9 6 6 6-6', chevron: 'm9 18 6-6-6-6', report: 'M4 19V5m0 14h16M8 15l3-4 3 2 5-7',
@@ -29,6 +36,15 @@ const signalText = (kind: 'motion' | 'occupancy', signal: Signal | null) => {
   return 'Durum bilinmiyor';
 };
 const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toLocaleUpperCase()) : 'Atanmamış';
+const healthReasonText = (reason: string) => ({
+  no_health_source: 'Çevrimdışı durumunu bildiren bir sensör yok.', no_connectivity_source: 'Bağlantı sensörü yok; erişilebilirlik doğrulanamıyor.',
+  no_reachability_source: 'Bu cihaz türü anlık bağlantı bilgisi sağlamıyor.', health_source_unavailable: 'Bağlantı kaynağı şu anda veri vermiyor.',
+  health_source_unknown: 'Bağlantı durumu doğrulanamıyor.', connectivity_off: 'Bağlantı sensörü cihazı çevrimdışı gösteriyor.',
+  configured_expected_off: 'Kapalı durumu ayarlarda beklenen durum olarak tanımlanmış.', device_problem: 'Cihaz bir sorun bildiriyor.',
+  mixed_connectivity_sources: 'Bağlantı sensörleri birbiriyle uyuşmuyor.', state_available: 'Home Assistant cihazdan güncel durum alıyor.',
+  primary_source_missing: 'Seçilen bağlantı sensörü bulunamıyor.', invalid_primary_source: 'Seçilen kaynak bağlantı sensörü değil.',
+  connectivity_unavailable: 'Bağlantı sensörü şu anda veri vermiyor.', partial_failure: 'Cihazın bazı işlevleri çalışmıyor olabilir.',
+} as Record<string, string>)[reason] ?? 'Durumla ilgili ek açıklama mevcut.';
 
 @customElement('device-care-panel')
 export class DeviceCarePanel extends LitElement {
@@ -49,19 +65,20 @@ export class DeviceCarePanel extends LitElement {
   private reconnectTimer?: number;
 
   static styles = css`
-    :host { display:block; color:var(--primary-text-color); --care-accent:#087f8c; --care-accent-soft:color-mix(in srgb,var(--care-accent) 11%,var(--card-background-color,#fff)); --care-warn:#a95000; --care-warn-soft:color-mix(in srgb,#d8761a 12%,var(--card-background-color,#fff)); --care-border:var(--divider-color,#d9dee3); --care-muted:var(--secondary-text-color,#66717c); }
+    :host { display:block; color:var(--primary-text-color); --care-accent:#087f8c; --care-accent-ink:color-mix(in srgb,var(--care-accent) 65%,var(--primary-text-color,#111)); --care-blue-ink:color-mix(in srgb,#2169a6 60%,var(--primary-text-color,#111)); --care-amber-ink:color-mix(in srgb,#9a6200 58%,var(--primary-text-color,#111)); --care-violet-ink:color-mix(in srgb,#6555a5 62%,var(--primary-text-color,#111)); --care-warn:#a95000; --care-warn-ink:color-mix(in srgb,#c56a17 58%,var(--primary-text-color,#111)); --care-accent-soft:color-mix(in srgb,var(--care-accent) 11%,var(--card-background-color,#fff)); --care-warn-soft:color-mix(in srgb,#d8761a 12%,var(--card-background-color,#fff)); --care-border:var(--divider-color,#d9dee3); --care-muted:var(--secondary-text-color,#66717c); }
     * { box-sizing:border-box } button, input, select { font:inherit } button { color:inherit; cursor:pointer }
     .shell { max-width:1560px; margin:0 auto; padding:20px clamp(14px,2.5vw,38px) 40px }
     .top { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:14px }
     h1 { margin:0; font-size:clamp(22px,2vw,29px); letter-spacing:-.035em; font-weight:720 }
+    .brand-title { display:flex; align-items:center; gap:10px }.brand-title img { width:38px; height:38px; object-fit:contain; flex:none }
     .subtitle { margin:5px 0 0; color:var(--care-muted); font-size:13px }
     .top-actions { display:flex; gap:8px; align-items:center }
     .button { border:1px solid var(--care-border); background:var(--card-background-color,#fff); border-radius:9px; padding:8px 12px; display:inline-flex; gap:7px; align-items:center; font-size:13px; font-weight:600; min-height:36px }
     .button:hover { background:var(--secondary-background-color,#f4f6f7) }.button.primary { background:var(--care-accent); color:white; border-color:var(--care-accent) }.button.ghost { border-color:transparent; background:transparent }
     svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex:none }
-    .summary { display:flex; align-items:center; gap:10px; padding:11px 14px; border:1px solid var(--care-border); border-radius:12px; background:var(--card-background-color,#fff); margin-bottom:13px; flex-wrap:wrap }
+    .summary { display:flex; align-items:center; gap:10px; padding:11px 14px; border:1px solid color-mix(in srgb,var(--care-accent) 22%,var(--care-border)); border-left:3px solid var(--care-accent); border-radius:12px; background:var(--card-background-color,#fff); margin-bottom:13px; flex-wrap:wrap }
     .summary-title { font-size:13px; font-weight:700; margin-right:auto }.metric { display:flex; gap:6px; align-items:center; color:var(--care-muted); font-size:12px; padding:4px 8px; border-radius:7px; background:var(--secondary-background-color,#f5f7f8) }.metric strong { color:var(--primary-text-color); font-size:13px }
-    .metric.warn { color:var(--care-warn); background:var(--care-warn-soft) }.metric.good { color:var(--care-accent); background:var(--care-accent-soft) }
+    .metric.warn { color:var(--care-warn-ink); background:var(--care-warn-soft) }.metric.good { color:var(--care-accent-ink); background:var(--care-accent-soft) }
     .toolbar { display:flex; align-items:center; gap:8px; margin:0 0 13px; flex-wrap:wrap }.search { position:relative; flex:1; min-width:180px; max-width:420px }.search svg { position:absolute; left:11px; top:10px; color:var(--care-muted) }.search input { width:100%; padding:8px 12px 8px 36px; border:1px solid var(--care-border); border-radius:9px; background:var(--card-background-color,#fff); color:inherit; outline:none; min-height:38px }.search input:focus, select:focus, input:focus { outline:2px solid color-mix(in srgb,var(--care-accent) 42%,transparent); outline-offset:1px }
     .select { border:1px solid var(--care-border); border-radius:9px; background:var(--card-background-color,#fff); color:inherit; padding:8px 30px 8px 10px; min-height:38px; font-size:13px }
     .tabs { display:flex; border:1px solid var(--care-border); padding:3px; border-radius:10px; background:var(--card-background-color,#fff); margin-left:auto }.tabs button { border:0; border-radius:7px; padding:6px 9px; display:flex; gap:6px; align-items:center; background:transparent; color:var(--care-muted); font-size:12px }.tabs button.active { color:var(--primary-text-color); background:var(--secondary-background-color,#eff2f4); font-weight:700 }
@@ -70,10 +87,15 @@ export class DeviceCarePanel extends LitElement {
     td { border-top:1px solid var(--care-border); padding:9px 12px; font-size:13px; vertical-align:middle } tbody tr { cursor:pointer } tbody tr:hover, tbody tr.selected { background:var(--secondary-background-color,#f7f8f9) }.device-name { display:flex; gap:9px; align-items:center; min-width:190px }.device-name > span:last-child { min-width:0 }.device-name .name,.device-name .sub { display:block }.device-glyph { width:30px; height:30px; display:grid; place-items:center; border-radius:8px; color:var(--care-muted); background:var(--secondary-background-color,#f1f3f4) }.name { font-weight:650 }.sub { font-size:11px; color:var(--care-muted); margin-top:2px }.health-pill, .signal-pill { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:620; border-radius:999px; padding:5px 8px; white-space:nowrap; background:var(--secondary-background-color,#f2f4f5); color:var(--care-muted) }.health-pill.online { color:var(--care-accent); background:var(--care-accent-soft) }.health-pill.offline, .health-pill.partial { color:var(--care-warn); background:var(--care-warn-soft) }.health-pill.expected_off { color:#6555a5; background:color-mix(in srgb,#6555a5 12%,var(--card-background-color,#fff)) }
     .signal-pill.active { color:var(--care-accent); background:var(--care-accent-soft); border:1px solid color-mix(in srgb,var(--care-accent) 24%,transparent) }.signal-pill.warning { color:var(--care-warn); background:var(--care-warn-soft) }.signal-pill.expected { color:#6555a5; background:color-mix(in srgb,#6555a5 12%,var(--card-background-color,#fff)) }.signal-pill.low { color:var(--care-warn); background:var(--care-warn-soft); font-weight:700 }.signal-pill.unknown { border:1px dashed var(--care-border); background:transparent }
     .signal-pill svg { width:14px;height:14px }.battery { font-variant-numeric:tabular-nums; white-space:nowrap }.battery.low { color:var(--care-warn); font-weight:700 }.table-footer { border-top:1px solid var(--care-border); padding:9px 12px; color:var(--care-muted); font-size:11px; display:flex; justify-content:space-between; gap:10px }
-    .room-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px }.room { border:1px solid var(--care-border); border-radius:12px; overflow:hidden; background:var(--card-background-color,#fff); min-width:0 }.room-head { width:100%; border:0; background:transparent; display:flex; align-items:center; gap:9px; padding:13px 14px; text-align:left }.room-head .room-title { font-weight:700; font-size:14px }.room-head small { color:var(--care-muted); margin-left:auto; font-size:11px }.room-body { border-top:1px solid var(--care-border); padding:9px; display:grid; gap:8px }.device-card { border:1px solid var(--care-border); border-radius:10px; padding:11px; cursor:pointer; min-width:0 }.device-card:hover { border-color:color-mix(in srgb,var(--care-accent) 42%,var(--care-border)) }.card-head { display:flex; gap:8px; align-items:flex-start }.card-head .name { flex:1; font-size:13px }.card-meta { color:var(--care-muted); font-size:11px; margin:4px 0 9px; display:grid; gap:2px }.card-meta-secondary { color:var(--care-muted) }.signals { display:flex; flex-wrap:wrap; gap:6px }.signal-pill { font-size:10px; padding:4px 7px }.card-health { margin-top:8px; display:flex; align-items:center; gap:7px; font-size:11px; color:var(--care-muted) }
+    .room-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:start; gap:12px }.room { align-self:start; border:1px solid var(--care-border); border-radius:12px; overflow:hidden; background:var(--card-background-color,#fff); min-width:0 }.room-head { width:100%; border:0; background:transparent; display:flex; align-items:center; gap:9px; padding:13px 14px; text-align:left }.room-head .room-title { font-weight:700; font-size:14px }.room-head small { color:var(--care-muted); margin-left:auto; font-size:11px }.room-body { border-top:1px solid var(--care-border); padding:9px; display:grid; align-content:start; gap:8px }.device-card { border:1px solid var(--care-border); border-radius:10px; padding:11px; cursor:pointer; min-width:0 }.device-card:hover { border-color:color-mix(in srgb,var(--care-accent) 42%,var(--care-border)) }.card-head { display:flex; gap:8px; align-items:flex-start }.card-head .name { flex:1; font-size:13px }.card-meta { color:var(--care-muted); font-size:11px; margin:4px 0 9px; display:grid; gap:2px }.card-meta-secondary { color:var(--care-muted) }.signals { display:flex; flex-wrap:wrap; gap:6px }.signal-pill { font-size:10px; padding:4px 7px }.card-health { margin-top:8px; display:flex; align-items:center; gap:7px; font-size:11px; color:var(--care-muted) }
+    .device-glyph.type-motion,.device-glyph.type-sensor { color:#087f8c; background:color-mix(in srgb,#087f8c 12%,var(--card-background-color,#fff)) }.device-glyph.type-light { color:#9a6200; background:color-mix(in srgb,#db9b26 18%,var(--card-background-color,#fff)) }.device-glyph.type-switch,.device-glyph.type-cover { color:#6555a5; background:color-mix(in srgb,#6555a5 12%,var(--card-background-color,#fff)) }.device-glyph.type-remote,.device-glyph.type-camera { color:#2169a6; background:color-mix(in srgb,#2169a6 12%,var(--card-background-color,#fff)) }.device-glyph.type-lock,.device-glyph.type-fan,.device-glyph.type-climate { color:#785694; background:color-mix(in srgb,#785694 12%,var(--card-background-color,#fff)) }
+    .signal-pill.state-on { color:#087f8c; background:color-mix(in srgb,#087f8c 12%,var(--card-background-color,#fff)) }.signal-pill.state-off { color:var(--care-muted); background:var(--secondary-background-color,#f2f4f5) }.signal-pill.state-unavailable { color:var(--care-warn); background:var(--care-warn-soft) }
+    tbody tr.selected { box-shadow:inset 3px 0 var(--care-accent) }.device-card:focus-visible,.room-head:focus-visible,.button:focus-visible { outline:2px solid color-mix(in srgb,var(--care-accent) 65%,var(--primary-text-color)); outline-offset:2px }
+    .health-pill.online,.signal-pill.active,.signal-pill.state-on,.metric.good { color:var(--care-accent-ink) }.health-pill.offline,.health-pill.partial,.signal-pill.warning,.signal-pill.low,.signal-pill.state-unavailable,.metric.warn { color:var(--care-warn-ink) }.health-pill.expected_off,.signal-pill.expected { color:var(--care-violet-ink) }.tabs button.active { color:var(--care-accent-ink); background:var(--care-accent-soft) }
+    .device-glyph.type-motion,.device-glyph.type-sensor { color:var(--care-accent-ink); background:var(--care-accent-soft) }.device-glyph.type-light { color:var(--care-amber-ink) }.device-glyph.type-switch,.device-glyph.type-cover,.device-glyph.type-lock,.device-glyph.type-fan,.device-glyph.type-climate { color:var(--care-violet-ink) }.device-glyph.type-remote,.device-glyph.type-camera { color:var(--care-blue-ink) }
     .drawer-backdrop { position:fixed; inset:0; background:#0005; z-index:8 }.drawer { position:fixed; z-index:9; right:0; top:0; bottom:0; width:min(460px,94vw); background:var(--primary-background-color,#fff); box-shadow:-12px 0 36px #0002; overflow:auto; padding:20px }.drawer-head { display:flex; align-items:flex-start; gap:12px; border-bottom:1px solid var(--care-border); padding-bottom:15px }.drawer-head h2 { margin:0; font-size:20px }.drawer-head .close { margin-left:auto }.section { padding:15px 0; border-bottom:1px solid var(--care-border) }.section h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--care-muted) }.detail-row { display:flex; justify-content:space-between; gap:16px; padding:6px 0; font-size:13px }.detail-row span:first-child { color:var(--care-muted) }.entity-row { border-top:1px solid var(--care-border); padding:10px 0; display:flex; justify-content:space-between; align-items:center; gap:10px }.entity-row:first-of-type { border:0 }.entity-title { min-width:0 }.entity-title strong { font-size:12px; display:block; overflow-wrap:anywhere }.entity-title small { color:var(--care-muted); font-size:11px }
     .settings-panel, .report-panel { border:1px solid var(--care-border); border-radius:12px; background:var(--card-background-color,#fff); padding:16px; margin-bottom:12px }.settings-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px }.field { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--care-muted) }.field select, .field input { width:100%; border:1px solid var(--care-border); border-radius:8px; background:var(--primary-background-color,#fff); color:inherit; padding:8px; min-height:36px }.settings-panel h2,.report-panel h2 { margin:0 0 12px; font-size:16px }.subhead { margin:16px 0 8px; font-size:12px; font-weight:700 }.checkline { display:flex; gap:8px; align-items:center; font-size:12px; margin:8px 0 }.settings-devices { border:1px solid var(--care-border); border-radius:8px; max-height:210px; overflow:auto; padding:8px 10px }.settings-device { display:flex; gap:8px; padding:5px 0; align-items:center; font-size:12px }.settings-device small { color:var(--care-muted); margin-left:auto }.sources { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px }.rule-row { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin:7px 0 }.plain-input { padding:7px 9px; border:1px solid var(--care-border); border-radius:7px; background:var(--primary-background-color,#fff); color:inherit; min-width:0 }.error { border:1px solid color-mix(in srgb,#c14635 32%,var(--care-border)); background:color-mix(in srgb,#c14635 8%,var(--card-background-color,#fff)); color:#9c3026; border-radius:9px; padding:10px 12px; margin:10px 0; font-size:13px }.empty { padding:48px 20px; text-align:center; color:var(--care-muted) }.loading { padding:60px 16px; text-align:center; color:var(--care-muted) }.report-stats { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px }.stat { padding:10px; border-radius:9px; background:var(--secondary-background-color,#f5f7f8) }.stat strong { display:block; font-size:18px; font-variant-numeric:tabular-nums }.stat span { display:block; color:var(--care-muted); font-size:10px; margin-top:2px }.report-events { margin-top:12px; border-top:1px solid var(--care-border) }.report-event { display:flex; gap:12px; padding:8px 0; font-size:12px; border-bottom:1px solid var(--care-border) }.report-event span:last-child { margin-left:auto; color:var(--care-muted) }.coverage { font-size:11px; color:var(--care-muted); margin-top:12px }
-    @media (max-width:1100px) { .room-grid { grid-template-columns:repeat(2,minmax(0,1fr)) } }
+    @media (max-width:1100px) { .room-grid { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start } }
     @media (max-width:720px) { .shell { padding:14px 12px 26px }.top { align-items:center }.top-actions .button-label { display:none }.top-actions .button { padding:8px }.summary { gap:6px; padding:9px }.summary-title { width:100%; margin:0 0 2px }.metric { font-size:11px; padding:4px 6px }.toolbar { gap:6px }.search { min-width:100%; max-width:none }.tabs { margin-left:0; order:2 }.toolbar > .select { flex:1; min-width:110px }.room-grid { grid-template-columns:minmax(0,1fr) }.table-scroll { max-height:none; overflow:visible }.inventory { border:0; background:transparent; overflow:visible } table,tbody { display:block; min-width:0 } thead { display:none } tbody { display:grid; gap:8px } tbody tr { display:flex; flex-direction:column; border:1px solid var(--care-border); border-radius:10px; padding:10px; background:var(--card-background-color,#fff) } td { display:none; border:0; padding:4px 0 } td:first-child, td[data-mobile] { display:block } td:first-child { padding:0 0 6px }.table-footer { margin-top:8px; border:1px solid var(--care-border); border-radius:9px; background:var(--card-background-color,#fff) }.settings-grid { grid-template-columns:1fr 1fr }.report-stats { grid-template-columns:repeat(2,minmax(0,1fr)) }.report-stats .stat:first-child { grid-column:span 2 }.sources { grid-template-columns:1fr }.rule-row { grid-template-columns:1fr 1fr auto } }
     @media (prefers-reduced-motion: no-preference) { .button, .device-card, tbody tr { transition:background-color .15s ease,border-color .15s ease } }
   `;
@@ -132,12 +154,71 @@ export class DeviceCarePanel extends LitElement {
       .sort((a,b) => prefs.sort === 'health' ? this.healthRank(a.health) - this.healthRank(b.health) || a.name.localeCompare(b.name) : prefs.sort === 'area' ? this.groupName(a).localeCompare(this.groupName(b)) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name));
   }
   private healthRank(h: Device['health']) { return ({ offline: 0, partial: 1, unknown: 2, expected_off: 3, online: 4 } as const)[h]; }
+  private healthText(device: Device) {
+    if (device.health !== 'unknown' || this.deviceType(device) !== 'remote') return healthLabel[device.health];
+    if (device.health_reason === 'no_reachability_source') return 'Erişilebilirlik bilgisi yok';
+    return 'Bağlantı doğrulanamıyor';
+  }
   private groupName(device: Device) {
     const by = this.data?.preferences.group_by ?? 'area';
     if (by === 'floor') return this.data?.floors.find((x) => x.id === device.floor_id)?.name ?? 'Kat atanmamış';
     if (by === 'integration') return (device.integrations?.length ? device.integrations : [device.integration].filter((value): value is string => Boolean(value))).map(humanize).join(', ') || 'Entegrasyon yok';
     if (by === 'none') return 'Tüm cihazlar';
     return this.data?.areas.find((x) => x.id === device.area_id)?.name ?? 'Atanmamış';
+  }
+  private areaName(device: Device) { return this.data?.areas.find((area) => area.id === device.area_id)?.name ?? 'Oda atanmamış'; }
+  private deviceType(device: Device): NonNullable<Device['device_type']> {
+    if (device.device_type) return device.device_type;
+    if (device.entities.some((entity) => entity.domain === 'remote')) return 'remote';
+    if (device.entities.some((entity) => entity.domain === 'light')) return 'light';
+    if (device.entities.some((entity) => entity.domain === 'switch')) return 'switch';
+    if (device.entities.some((entity) => entity.device_class === 'motion' || entity.device_class === 'occupancy')) return 'sensor';
+    return 'other';
+  }
+  private deviceIcon(device: Device) {
+    const type = this.deviceType(device);
+    return icon(type === 'light' ? 'light' : type === 'switch' ? 'switch' : type === 'remote' ? 'remote' : type === 'sensor' ? 'sensor' : type === 'fan' ? 'fan' : type === 'lock' ? 'lock' : type === 'climate' ? 'climate' : type === 'camera' ? 'camera' : type === 'cover' ? 'cover' : 'settings');
+  }
+  private statusText(device: Device) {
+    const type = this.deviceType(device);
+    if (type === 'light' || type === 'switch' || type === 'cover' || type === 'fan' || type === 'lock' || type === 'climate') {
+      const entity = device.entities.find((item) => item.domain === type && !item.disabled);
+      if (!entity) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum ölçümü yok</span>`;
+      if (entity.state === 'unavailable') return html`<span class="signal-pill state-unavailable">${this.deviceIcon(device)}Durum erişilemiyor</span>`;
+      if (entity.state === 'unknown') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum bilinmiyor</span>`;
+      if (type === 'climate') {
+        const state = entity.state === 'off' ? 'Kapalı' : entity.state === 'unknown' ? 'Durum bilinmiyor' : humanize(entity.state);
+        const temperature = entity.attributes.current_temperature;
+        const tempText = typeof temperature === 'number' && Number.isFinite(temperature) ? ` · ${temperature}°${typeof entity.attributes.temperature_unit === 'string' ? entity.attributes.temperature_unit : ''}` : '';
+        return html`<span class="signal-pill ${entity.state === 'off' ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${state}${entity.state !== 'off' ? tempText : ''}</span>`;
+      }
+      if (type === 'cover') {
+        const state = ({ open:'Açık', closed:'Kapalı', opening:'Açılıyor', closing:'Kapanıyor' } as Record<string,string>)[entity.state] ?? entity.state;
+        return html`<span class="signal-pill ${entity.state === 'closed' ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${state}</span>`;
+      }
+      if (type === 'lock') {
+        const locked = entity.state === 'locked';
+        if (!locked && entity.state !== 'unlocked') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum bilinmiyor</span>`;
+        return html`<span class="signal-pill ${locked ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${locked ? 'Kilitli' : 'Kilit açık'}</span>`;
+      }
+      if (!['on','off'].includes(entity.state)) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum bilinmiyor</span>`;
+      const active = entity.state === 'on';
+      const brightness = Number(entity.attributes.brightness);
+      const level = type === 'light' && active && Number.isFinite(brightness) ? ` · %${Math.round(brightness / 255 * 100)}` : '';
+      return html`<span class="signal-pill ${active ? 'state-on' : 'state-off'}">${this.deviceIcon(device)}${active ? 'Açık' : 'Kapalı'}${level}</span>`;
+    }
+    if (type === 'remote') {
+      const activity = device.activity;
+      const timestamp = activity?.last_event_at ? this.formatDate(activity.last_event_at) : null;
+      const event = activity?.event_type ? ` · ${humanize(activity.event_type)}` : '';
+      return html`${device.signals.connectivity ? this.renderConnectivity(device.signals.connectivity) : html`<span class="signal-pill unknown">${this.deviceIcon(device)}Anlık bağlantı bilgisi yok</span>`}${timestamp || activity?.event_type ? html`<span class="signal-pill">${icon('remote')}${timestamp ? `Son basış ${timestamp}` : 'Son olay zamanı yok'}${event}</span>` : nothing}${device.signals.battery ? this.renderBattery(device.signals.battery) : nothing}`;
+    }
+    const hasMovement = Boolean(device.signals.motion || device.signals.occupancy);
+    if (hasMovement) return this.renderMotion(device);
+    if (device.signals.battery) return this.renderBattery(device.signals.battery);
+    if (device.signals.connectivity?.meaning === 'unavailable') return html`<span class="signal-pill state-unavailable">${icon('wifi')}Erişilemiyor</span>`;
+    if (device.signals.connectivity) return this.renderConnectivity(device.signals.connectivity);
+    return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Bu cihaz türünde durum ölçümü yok</span>`;
   }
   private async patch(patch: Partial<Preferences>) {
     if (!this.api || !this.data) return;
@@ -191,7 +272,7 @@ export class DeviceCarePanel extends LitElement {
     const unknown = devices.filter((d) => d.health === 'unknown').length;
     const lowBattery = devices.filter((d) => { const signal = d.signals.battery; const value = signal ? this.batteryNumber(signal) : null; return signal?.meaning === 'low' || (signal?.unit?.trim() === '%' && value !== null && value < 20); }).length;
     return html`<main class="shell">
-      <header class="top"><div><h1>Cihazlar & Bakım</h1><p class="subtitle">${devices.length} cihaz izleniyor · ${this.data.monitoring_since ? `İzleme başlangıcı ${this.formatDate(this.data.monitoring_since)}` : 'İzleme başlangıç zamanı yok'}</p></div><div class="top-actions">
+      <header class="top"><div><h1 class="brand-title"><img src=${brandIcon} alt="" aria-hidden="true">Cihazlar & Bakım</h1><p class="subtitle">${devices.length} cihaz izleniyor · ${this.data.monitoring_since ? `İzleme başlangıcı ${this.formatDate(this.data.monitoring_since)}` : 'İzleme başlangıç zamanı yok'}</p></div><div class="top-actions">
         ${this.data.is_admin ? html`<button class="button" @click=${() => { this.editing = !this.editing; if (!this.editing) void this.load(); }}>${icon(this.editing ? 'close' : 'edit')}<span class="button-label">${this.editing ? 'Düzenlemeyi kapat' : 'Düzenle'}</span></button>` : nothing}
         <button class="button" @click=${() => this.report ? (this.report = undefined) : void this.showReport()}>${icon('report')}<span class="button-label">${this.report ? 'Raporu kapat' : 'Raporlar'}</span></button>
       </div></header>
@@ -211,13 +292,13 @@ export class DeviceCarePanel extends LitElement {
 
   private renderInventory(devices: Device[]) {
     const columns = new Set(this.data!.preferences.visible_columns);
-    return html`<section class="inventory"><div class="table-scroll"><table><thead><tr><th>Cihaz</th><th>Sağlık</th>${columns.has('area') ? html`<th>Oda</th>` : nothing}${columns.has('motion') ? html`<th>Hareket / varlık</th>` : nothing}${columns.has('battery') ? html`<th>Pil</th>` : nothing}${columns.has('connectivity') ? html`<th>Bağlantı</th>` : nothing}<th></th></tr></thead><tbody>
+    return html`<section class="inventory"><div class="table-scroll"><table><thead><tr><th>Cihaz</th><th>Sağlık</th>${columns.has('area') ? html`<th>Oda</th>` : nothing}${columns.has('motion') ? html`<th>Durum</th>` : nothing}${columns.has('battery') ? html`<th>Pil</th>` : nothing}${columns.has('connectivity') ? html`<th>Bağlantı</th>` : nothing}<th></th></tr></thead><tbody>
       ${devices.map((device) => html`<tr class=${this.selectedId === device.id ? 'selected' : ''} @click=${() => this.selectDevice(device)} tabindex="0" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') this.selectDevice(device); }}>
-        <td><div class="device-name"><span class="device-glyph">${icon('settings')}</span><span><span class="name">${device.name}</span>${device.model ? html`<span class="sub">${device.model}</span>` : nothing}<span class="sub">${this.devicePlatformLine(device)}</span></span></div></td>
-        <td data-mobile><span class="health-pill ${device.health}">${icon(device.health === 'online' ? 'check' : 'alert')}${healthLabel[device.health]}</span></td>
-        ${columns.has('area') ? html`<td>${this.groupName(device)}</td>` : nothing}
-        ${columns.has('motion') ? html`<td data-mobile>${this.renderMotion(device)}</td>` : nothing}
-        ${columns.has('battery') ? html`<td data-mobile>${this.renderBattery(device.signals.battery)}</td>` : nothing}
+        <td><div class="device-name"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><span><span class="name">${device.name}</span>${device.model ? html`<span class="sub">${device.model}</span>` : nothing}<span class="sub">${this.devicePlatformLine(device)}</span></span></div></td>
+        <td data-mobile><span class="health-pill ${device.health}" title=${device.health_reason ? healthReasonText(device.health_reason) : healthLabel[device.health]}>${icon(device.health === 'online' ? 'check' : 'alert')}${this.healthText(device)}</span></td>
+        ${columns.has('area') ? html`<td>${this.areaName(device)}</td>` : nothing}
+        ${columns.has('motion') ? html`<td data-mobile>${this.statusText(device)}</td>` : nothing}
+        ${columns.has('battery') ? html`<td data-mobile>${this.renderDeviceBattery(device)}</td>` : nothing}
         ${columns.has('connectivity') ? html`<td data-mobile>${this.renderConnectivity(device.signals.connectivity)}</td>` : nothing}
         <td>${icon('chevron')}</td></tr>`)}
       </tbody></table></div><footer class="table-footer"><span>${devices.length} cihaz</span><span>Bir cihazı seçerek ayrıntılarını ve desteklenen ayarları açın</span></footer></section>`;
@@ -226,7 +307,7 @@ export class DeviceCarePanel extends LitElement {
     return html`<section class="room-grid">${this.groupDevices(devices).map(([group, items]) => html`<article class="room"><button class="room-head" aria-expanded=${this.openGroups[group] !== false} @click=${() => this.openGroups = { ...this.openGroups, [group]: this.openGroups[group] === false }}>${icon('room')}<span class="room-title">${group}</span><small>${items.length} cihaz</small>${icon('down')}</button>${this.openGroups[group] === false ? nothing : html`<div class="room-body">${items.map((device) => this.renderDeviceCard(device))}</div>`}</article>`)}</section>`;
   }
   private renderDeviceCard(device: Device) {
-    return html`<article class="device-card" role="button" tabindex="0" @click=${() => this.selectDevice(device)} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.selectDevice(device); }}><div class="card-head"><span class="device-glyph">${icon('settings')}</span><span class="name">${device.name}</span><span class="health-pill ${device.health}">${healthLabel[device.health]}</span></div><p class="card-meta">${device.model ? html`<span>${device.model}</span>` : nothing}<span class="card-meta-secondary">${this.devicePlatformLine(device)}</span></p><div class="signals">${this.renderMotion(device)}${this.renderBattery(device.signals.battery)}${this.renderConnectivity(device.signals.connectivity)}</div></article>`;
+    return html`<article class="device-card" role="button" tabindex="0" @click=${() => this.selectDevice(device)} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.selectDevice(device); }}><div class="card-head"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><span class="name">${device.name}</span><span class="health-pill ${device.health}" title=${device.health_reason ? healthReasonText(device.health_reason) : healthLabel[device.health]}>${this.healthText(device)}</span></div><p class="card-meta">${device.model ? html`<span>${device.model}</span>` : nothing}<span class="card-meta-secondary">${this.devicePlatformLine(device)}</span></p><div class="signals">${this.statusText(device)}</div></article>`;
   }
   private renderMotion(device: Device) {
     const motion = device.signals.motion; const occupancy = device.signals.occupancy;
@@ -246,7 +327,8 @@ export class DeviceCarePanel extends LitElement {
   }
   private renderBattery(signal: Signal | null) {
     if (!signal || signal.meaning === 'missing') return html`<span class="signal-pill unknown">${icon('battery')}Pil verisi yok</span>`;
-    if (signal.meaning === 'unavailable') return html`<span class="signal-pill warning">${icon('battery')}Pil erişilemiyor</span>`;
+    if (signal.meaning === 'unavailable' || signal.state === 'unavailable') return html`<span class="signal-pill warning">${icon('battery')}Pil erişilemiyor</span>`;
+    if (signal.state === 'unknown') return html`<span class="signal-pill unknown">${icon('battery')}Pil bilinmiyor</span>`;
     if (signal.meaning === 'low') return html`<span class="signal-pill low">${icon('battery')}Pil düşük</span>`;
     if (signal.meaning === 'ok') return html`<span class="signal-pill">${icon('battery')}Pil normal</span>`;
     if (signal.meaning === 'expected_off') return html`<span class="signal-pill expected">${icon('battery')}Bilerek kapalı</span>`;
@@ -255,17 +337,24 @@ export class DeviceCarePanel extends LitElement {
     const low = numeric !== null && signal.unit?.trim() === '%' && numeric < 20;
     const value = numeric !== null ? `${numeric}${signal.unit ? ` ${signal.unit}` : ''}` : raw === null ? signal.state : `${raw}${signal.unit ? ` ${signal.unit}` : ''}`;
     if (signal.meaning === 'unknown' && numeric === null) return html`<span class="signal-pill unknown">${icon('battery')}Pil bilinmiyor</span>`;
-    const cls = signal.meaning === 'unknown' ? 'unknown' : '';
-    return html`<span class="signal-pill ${cls} ${low ? 'low' : ''}">${icon('battery')}Pil ${value}${signal.meaning === 'unknown' ? ' · durum bilinmiyor' : ''}</span>`;
+    const cls = signal.meaning === 'unknown' && numeric === null ? 'unknown' : '';
+    const uncertain = signal.meaning === 'unknown' && numeric === null ? ' · durum bilinmiyor' : '';
+    return html`<span class="signal-pill ${cls} ${low ? 'low' : ''}">${icon('battery')}Pil ${value}${uncertain}</span>`;
+  }
+  private renderDeviceBattery(device: Device) {
+    if (device.signals.battery) return this.renderBattery(device.signals.battery);
+    const supportsBattery = device.capabilities?.includes('battery') ?? device.entities.some((entity) => entity.device_class === 'battery' || `${entity.entity_id} ${entity.name}`.toLocaleLowerCase().includes('battery'));
+    return html`<span class="signal-pill unknown">${icon('battery')}${supportsBattery ? 'Pil verisi yok' : 'Pil ölçümü yok'}</span>`;
   }
   private renderConnectivity(signal: Signal | null) {
     if (!signal || signal.meaning === 'missing') return html``;
-    const text = signal.meaning === 'unavailable' ? 'Bağlantı yok' : signal.meaning === 'unknown' ? 'Bağlantı bilinmiyor' : String(signal.value ?? signal.state);
+    const text = signal.meaning === 'unavailable' ? 'Bağlantı erişilemiyor' : signal.meaning === 'unknown' ? 'Bağlantı bilinmiyor' : signal.meaning === 'active' ? 'Bağlı' : signal.meaning === 'inactive' ? 'Bağlantı yok' : String(signal.value ?? signal.state);
     return html`<span class="signal-pill ${signal.meaning === 'unavailable' ? 'warning' : signal.meaning === 'unknown' ? 'unknown' : ''}">${icon('wifi')}${text}</span>`;
   }
   private renderDrawer(device: Device) {
-    return html`<div class="drawer-backdrop" @click=${() => this.selectedId = undefined}></div><aside class="drawer" aria-label=${`${device.name} ayrıntıları`}><div class="drawer-head"><span class="device-glyph">${icon('settings')}</span><div><h2>${device.name}</h2>${device.model ? html`<div class="sub">${device.model}</div>` : nothing}<div class="sub">${this.devicePlatformLine(device)}</div></div><button class="button ghost close" aria-label="Kapat" @click=${() => this.selectedId = undefined}>${icon('close')}</button></div>
-      <section class="section"><h3>Sağlık</h3><div class="detail-row"><span>Durum</span><strong>${healthLabel[device.health]}</strong></div>${device.health_reason ? html`<div class="detail-row"><span>Açıklama</span><span>${humanize(device.health_reason)}</span></div>` : nothing}<div class="detail-row"><span>Oda</span><span>${this.groupName(device)}</span></div><div class="detail-row"><span>Etiketler</span><span>${device.labels.length ? device.labels.join(', ') : '—'}</span></div>
+    return html`<div class="drawer-backdrop" @click=${() => this.selectedId = undefined}></div><aside class="drawer" aria-label=${`${device.name} ayrıntıları`}><div class="drawer-head"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><div><h2>${device.name}</h2>${device.model ? html`<div class="sub">${device.model}</div>` : nothing}<div class="sub">${this.devicePlatformLine(device)}</div></div><button class="button ghost close" aria-label="Kapat" @click=${() => this.selectedId = undefined}>${icon('close')}</button></div>
+      <section class="section"><h3>Sağlık</h3><div class="detail-row"><span>Durum</span><strong>${this.healthText(device)}</strong></div>${device.health_reason ? html`<div class="detail-row"><span>Açıklama</span><span>${healthReasonText(device.health_reason)}</span></div>` : nothing}<div class="detail-row"><span>Oda</span><span>${this.areaName(device)}</span></div><div class="detail-row"><span>Etiketler</span><span>${device.labels.length ? device.labels.join(', ') : '—'}</span></div>
+      ${device.device_type === 'remote' ? html`<div class="detail-row"><span>Anlık bağlantı</span><span>${device.signals.connectivity ? 'Bağlantı sensörü mevcut' : 'Anlık bağlantı bilgisi yok'}</span></div>${device.activity?.event_type || device.activity?.last_event_at ? html`<div class="detail-row"><span>Son basış / etkinlik</span><span>${device.activity.last_event_at ? this.formatDate(device.activity.last_event_at) : 'Zaman bilgisi yok'}${device.activity.event_type ? ` · ${humanize(device.activity.event_type)}` : ''}</span></div>` : nothing}` : nothing}
       ${device.signals.motion ? html`<div class="detail-row"><span>Hareket</span>${this.renderMotion(device)}</div>` : nothing}${device.signals.occupancy && device.signals.occupancy.entity_id !== device.signals.motion?.entity_id ? html`<div class="detail-row"><span>Varlık</span>${this.renderMotion({ ...device, signals: { ...device.signals, motion: null } })}</div>` : nothing}${device.signals.battery ? html`<div class="detail-row"><span>Pil</span>${this.renderBattery(device.signals.battery)}</div>` : nothing}</section>
       <section class="section"><h3>Varlıklar (${device.entities.length})</h3>${device.entities.map((entity) => html`<div class="entity-row"><div class="entity-title"><strong>${entity.name}</strong><small>${entity.entity_id}${entity.disabled ? ' · devre dışı' : ''}</small></div><span class="sub">${entity.state}</span></div>`)}</section></aside>`;
   }
@@ -274,7 +363,7 @@ export class DeviceCarePanel extends LitElement {
     return html`<section class="settings-panel"><h2>Görünüm ve kapsam</h2><div class="settings-grid"><label class="field">Cihaz kapsamı<select .value=${p.scope} @change=${(e: Event) => this.changeScope((e.target as HTMLSelectElement).value as Preferences['scope'])}><option value="all">Tüm cihazlar</option><option value="area">Oda</option><option value="floor">Kat</option><option value="label">Etiket</option><option value="integration">Entegrasyon</option><option value="manual">Elle seç</option></select></label>${this.renderScopeValue(p)}<label class="field">Gruplama<select .value=${p.group_by} @change=${(e: Event) => this.editPreference('group_by', (e.target as HTMLSelectElement).value as Preferences['group_by'])}><option value="area">Odaya göre</option><option value="floor">Kata göre</option><option value="integration">Entegrasyona göre</option><option value="none">Gruplama yok</option></select></label><label class="field">Sıralama<select .value=${p.sort} @change=${(e: Event) => this.editPreference('sort', (e.target as HTMLSelectElement).value as Preferences['sort'])}><option value="name">Ada göre</option><option value="health">Sağlığa göre</option><option value="area">Odaya göre</option></select></label><label class="field">Başlangıç görünümü<select .value=${p.layout} @change=${(e: Event) => this.editPreference('layout', (e.target as HTMLSelectElement).value as Preferences['layout'])}><option value="inventory">Kompakt envanter</option><option value="rooms">Oda kartları</option></select></label></div>
       <label class="checkline"><input type="checkbox" .checked=${p.auto_include_new} ?disabled=${p.scope !== 'manual'} @change=${(e: Event) => this.editPreference('auto_include_new', (e.target as HTMLInputElement).checked)}> Yeni bulunan cihazları otomatik dahil et (elle seçilen kapsamda)</label>
       <div class="settings-grid"><label class="field">Geçmiş saklama süresi (gün)<input type="number" min="1" max="365" step="1" .value=${String(p.retention_days)} @change=${(e: Event) => this.editPreference('retention_days', Math.max(1, Math.min(365, Number((e.target as HTMLInputElement).value))))}></label><label class="checkline"><input type="checkbox" .checked=${p.weekly_report_enabled} @change=${(e: Event) => this.editPreference('weekly_report_enabled', (e.target as HTMLInputElement).checked)}> Haftalık rapor bildirimi (Pazartesi 09.00)</label></div>
-      <div class="subhead">Tabloda gösterilen sütunlar</div><div class="settings-grid">${[['area','Oda'],['motion','Hareket / varlık'],['battery','Pil'],['connectivity','Bağlantı']].map(([key,label]) => html`<label class="checkline"><input type="checkbox" .checked=${p.visible_columns.includes(key)} @change=${(e: Event) => { const checked = (e.target as HTMLInputElement).checked; this.editPreference('visible_columns', checked ? [...p.visible_columns,key] : p.visible_columns.filter((x) => x !== key)); }}>${label}</label>`)}</div>
+      <div class="subhead">Tabloda gösterilen sütunlar</div><div class="settings-grid">${[['area','Oda'],['motion','Durum'],['battery','Pil'],['connectivity','Bağlantı']].map(([key,label]) => html`<label class="checkline"><input type="checkbox" .checked=${p.visible_columns.includes(key)} @change=${(e: Event) => { const checked = (e.target as HTMLInputElement).checked; this.editPreference('visible_columns', checked ? [...p.visible_columns,key] : p.visible_columns.filter((x) => x !== key)); }}>${label}</label>`)}</div>
       <div class="subhead">Cihaz istisnaları ve elle seçilen cihazlar <span class="sub">(hariç tutulanlar kapsam kuralının önceliğindedir)</span></div><div class="settings-devices">${devices.map((device) => { const excluded = p.excluded_device_ids.includes(device.id); const isIncluded = p.included_device_ids === null ? !excluded : p.included_device_ids.includes(device.id); return html`<label class="settings-device"><input type="checkbox" .checked=${p.scope === 'manual' ? isIncluded : !excluded} @change=${(e: Event) => { const checked = (e.target as HTMLInputElement).checked; if (p.scope === 'manual') { const list = new Set(p.included_device_ids ?? this.data!.all_devices.map((d) => d.id)); const excludedIds = new Set(p.excluded_device_ids); if (checked) { list.add(device.id); excludedIds.delete(device.id); } else list.delete(device.id); this.editPreference('included_device_ids', [...list]); this.editPreference('excluded_device_ids', [...excludedIds]); } else { const list = new Set(p.excluded_device_ids); checked ? list.delete(device.id) : list.add(device.id); this.editPreference('excluded_device_ids', [...list]); } }}><span>${device.name}</span><small>${this.groupName(device)}</small></label>`; })}</div>
       <div class="subhead">Algılayıcı kaynakları</div><div class="sources">${devices.flatMap((device) => (['motion','occupancy','battery','connectivity'] as const).map((role) => {
         const current = p.source_overrides[device.id]?.[role] ?? '';
@@ -283,7 +372,7 @@ export class DeviceCarePanel extends LitElement {
       }))}</div>
       <div class="subhead">Bilerek kapalı kuralları</div>${p.expected_off_rules.map((rule, index) => html`<div class="rule-row"><input class="plain-input" aria-label="Entity" .value=${rule.entity_id} @change=${(e: Event) => this.updateRule(index,'entity_id',(e.target as HTMLInputElement).value)}><input class="plain-input" aria-label="Beklenen durum" .value=${rule.state} @change=${(e: Event) => this.updateRule(index,'state',(e.target as HTMLInputElement).value)}><button class="button" aria-label="Kuralı sil" @click=${() => this.editPreference('expected_off_rules', p.expected_off_rules.filter((_, i) => i !== index))}>${icon('close')}</button></div>`)}
       <button class="button" @click=${() => this.editPreference('expected_off_rules', [...p.expected_off_rules,{ id: crypto.randomUUID(), entity_id:'', state:'off' }])}>+ Kural ekle</button>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="button" @click=${() => { this.editing = false; void this.load(); }}>İptal</button><button class="button primary" ?disabled=${this.saving} @click=${() => this.saveEditor()}>{this.saving ? 'Kaydediliyor…' : 'Değişiklikleri kaydet'}</button></div></section>`;
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="button" @click=${() => { this.editing = false; void this.load(); }}>İptal</button><button class="button primary" ?disabled=${this.saving} @click=${() => this.saveEditor()}>${this.saving ? 'Kaydediliyor…' : 'Değişiklikleri kaydet'}</button></div></section>`;
   }
   private changeScope(scope: Preferences['scope']) {
     const p = this.data!.preferences;

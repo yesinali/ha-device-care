@@ -6,8 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "custom_components"))
 
-from device_care.health import derive_health, signal_meaning
-from device_care.discovery import _signal_meaning, _signal_value, is_low_battery
+from device_care.health import derive_health, has_available_state, signal_meaning
+from device_care.discovery import (
+  _device_capabilities, _latest_event_activity, _select_battery_source, _select_signal,
+  _signal_meaning, _signal_value, is_low_battery, is_valid_signal_source,
+)
 from device_care.const import SIGNAL_CLASSES
 from device_care.history import close_open_events, record_transition, report_window
 from device_care.discovery import include_new_manual_devices
@@ -21,6 +24,10 @@ class CoreTests(unittest.TestCase):
     self.assertEqual(signal_meaning("unknown"), "unknown")
     self.assertEqual(signal_meaning(None), "missing")
     self.assertEqual(signal_meaning("off", expected_off=True), "expected_off")
+    self.assertTrue(has_available_state("off"))
+    self.assertFalse(has_available_state(None))
+    self.assertFalse(has_available_state("unknown"))
+    self.assertFalse(has_available_state("unavailable"))
 
 
   def test_health_requires_reliable_source(self):
@@ -57,6 +64,14 @@ class CoreTests(unittest.TestCase):
       "device_class": "motion", "state": "unknown",
     }])[0], "unknown")
     self.assertEqual(derive_health([{
+      "entity_id": "sensor.remote_battery", "domain": "sensor",
+      "device_class": "battery", "entity_category": "diagnostic", "state": "100",
+    }]), ("unknown", "no_reachability_source"))
+    self.assertEqual(derive_health([{
+      "entity_id": "sensor.remote_temperature", "domain": "sensor",
+      "device_class": "temperature", "state": "21.5",
+    }]), ("unknown", "no_reachability_source"))
+    self.assertEqual(derive_health([{
       "entity_id": "binary_sensor.connectivity", "domain": "binary_sensor",
       "device_class": "connectivity", "entity_category": "diagnostic", "state": "on",
     }])[0], "online")
@@ -71,10 +86,43 @@ class CoreTests(unittest.TestCase):
     low = {"state": "on", "device_class": "battery", "domain": "binary_sensor", "attributes": {}}
     self.assertEqual(_signal_value("battery", percent), 87)
     self.assertEqual(_signal_value("battery", voltage), 2.91)
+    self.assertEqual(_signal_meaning("battery", percent, False), "measured")
+    self.assertEqual(_signal_meaning("battery", voltage, False), "measured")
     self.assertEqual(_signal_meaning("battery", low, False), "low")
     self.assertEqual(_signal_meaning("battery", {**low, "state": "off"}, False), "ok")
     self.assertTrue(is_low_battery({"value": 12, "unit": "%"}))
     self.assertFalse(is_low_battery({"value": 2.9, "unit": "V"}))
+
+  def test_battery_prefers_unique_percent_over_voltage_but_keeps_equal_sources_ambiguous(self):
+    percent = {"entity_id": "sensor.remote_battery", "state": "100", "device_class": "battery", "domain": "sensor", "unit": "%", "name": "Battery", "attributes": {}}
+    voltage = {"entity_id": "sensor.remote_battery_voltage", "state": "3.1", "device_class": "voltage", "domain": "sensor", "unit": "V", "name": "Battery voltage", "attributes": {}}
+    another_percent = {**percent, "entity_id": "sensor.remote_battery_level_2"}
+    self.assertEqual(_select_battery_source([voltage, percent]), percent)
+    self.assertIsNone(_select_battery_source([percent, another_percent]))
+    self.assertEqual(_select_signal("battery", [percent, voltage], "sensor.remote_battery_voltage"), voltage)
+    self.assertIsNone(_select_signal("battery", [percent, voltage], "switch.remote_unrelated"))
+    self.assertTrue(is_valid_signal_source("battery", voltage))
+    self.assertFalse(is_valid_signal_source("battery", {**percent, "entity_id": "switch.remote", "domain": "switch", "device_class": None}))
+
+  def test_event_activity_uses_explicit_valid_timestamp_without_claiming_reachability(self):
+    now = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
+    events = [
+      {"entity_id": "event.remote_a", "domain": "event", "state": "single_press", "attributes": {"event_type": "single_press", "event_timestamp": "2026-10-30T10:30:00+00:00"}},
+      {"entity_id": "event.remote_b", "domain": "event", "state": "2026-10-30T11:00:00+00:00", "attributes": {}},
+      {"entity_id": "event.future", "domain": "event", "state": "2099-01-01T00:00:00Z", "attributes": {}},
+    ]
+    activity = _latest_event_activity(events, now, "UTC")
+    self.assertEqual(activity, {"entity_id": "event.remote_b", "event_type": None, "last_event_at": "2026-10-30T11:00:00+00:00"})
+    self.assertEqual(derive_health(events), ("unknown", "no_reachability_source"))
+
+  def test_remote_device_type_and_capabilities_use_entities_not_names(self):
+    entities = [
+      {"domain": "event", "device_class": "button", "entity_id": "event.remote", "attributes": {}, "disabled": False},
+      {"domain": "sensor", "device_class": "battery", "entity_id": "sensor.remote_battery", "unit": "%", "name": "Battery", "attributes": {}, "disabled": False},
+    ]
+    device_type, capabilities = _device_capabilities(entities, {"battery": None, "connectivity": None, "motion": None, "occupancy": None})
+    self.assertEqual(device_type, "remote")
+    self.assertEqual(capabilities, ["activity", "battery"])
     self.assertEqual(derive_health([
         {"entity_id": "binary_sensor.a", "device_class": "connectivity", "state": "on"},
         {"entity_id": "binary_sensor.b", "device_class": "connectivity", "state": "off"},

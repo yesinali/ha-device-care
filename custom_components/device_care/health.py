@@ -5,6 +5,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 
+def has_available_state(state: Any) -> bool:
+    """Return whether a state object/value contains a usable current state."""
+    value = getattr(state, "state", state)
+    return value not in (None, "", "unknown", "unavailable")
+
+
 def signal_meaning(state: str | None, expected_off: bool = False) -> str:
     """Map an HA state into display semantics; never infer missing as inactive."""
     if expected_off:
@@ -54,29 +60,28 @@ def derive_health(
         and not e.get("disabled")
     ]
     if not candidates:
-        # HA devices rarely expose a dedicated connectivity entity. A concrete
-        # state from an enabled, operational entity (for example motion=off or
-        # a light=switch state) is evidence that HA has a current state, but is
-        # not evidence of an outage when it is off. Diagnostic/config entities
-        # are intentionally excluded; RSSI/LQI values are telemetry, not a
-        # connectivity verdict. This is a snapshot availability signal, not a
-        # heartbeat or reachability guarantee.
+        # HA devices rarely expose a dedicated connectivity entity. A current
+        # binary-sensor or controllable-domain state is evidence HA has an
+        # operational state, but is not evidence of an outage when it is off.
+        # Numeric sensors (including battery/RSSI/voltage) and event timestamps
+        # are telemetry/activity, not proof of present reachability.
         operational = [
             e for e in entities
             if not e.get("disabled")
             and e.get("entity_category") not in {"diagnostic", "config"}
             and e.get("domain") in {
-                "binary_sensor", "button", "climate", "cover", "fan",
+                "binary_sensor", "climate", "cover", "fan",
                 "light", "lock", "media_player", "number", "select",
-                "sensor", "switch", "vacuum", "valve",
+                "switch", "vacuum", "valve",
             }
+            and e.get("device_class") not in {"battery", "problem"}
         ]
         if any(e.get("state") == "on" for e in problem_entities):
             return "partial", "device_problem"
         if any(e.get("state") not in {None, "", "unknown", "unavailable"} for e in operational if e.get("device_class") != "problem"):
             return "online", "state_available"
         if not operational:
-            return "unknown", "no_health_source"
+            return "unknown", "no_reachability_source"
         return "unknown", "health_source_unavailable"
     states = [str(entity.get("state", "unknown")) for entity in candidates]
     if all(e.get("entity_id") in expected for e in candidates):

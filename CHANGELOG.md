@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here. The project has not published a release yet.
 
+## 0.1.0-beta.3
+
+- Prefer a unique battery percentage source over voltage; preserve same-priority ambiguity and validate saved source overrides.
+- Expose inferred device type and capabilities, plus event activity only from explicit event timestamps.
+- Keep remote reachability unknown without an actual connectivity source and explain the limitation in the panel.
+- Treat numeric battery readings as measured values and avoid interpreting numeric telemetry as liveness.
+- Reject CONFIG actions when the entity state is unknown or unavailable.
+
 ## 0.1.0-beta.2
 
 - Treat current operational entity states as positive availability evidence while keeping missing, unavailable, and diagnostic-only telemetry unknown.
