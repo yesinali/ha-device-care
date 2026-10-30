@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "custom_components"))
 
 from device_care.health import derive_health, signal_meaning
 from device_care.discovery import _signal_meaning, _signal_value, is_low_battery
+from device_care.const import SIGNAL_CLASSES
 from device_care.history import close_open_events, record_transition, report_window
 from device_care.discovery import include_new_manual_devices
 
@@ -23,6 +24,7 @@ class CoreTests(unittest.TestCase):
 
 
   def test_health_requires_reliable_source(self):
+    self.assertEqual(SIGNAL_CLASSES["connectivity"], {"connectivity"})
     self.assertEqual(derive_health([], None)[0], "unknown")
     self.assertEqual(derive_health([{
       "entity_id": "binary_sensor.motion", "domain": "binary_sensor",

@@ -51,7 +51,7 @@ Subscriptions are released through Home Assistant's standard `unsubscribe_events
 }
 ```
 
-Signal `meaning` is `active`, `inactive`, `unavailable`, `unknown`, `missing`, or `expected_off`; battery binary sensors may also use `low` or `ok`. Numeric battery values (percent or voltage) retain `value` and `unit` independently from `meaning`. Device health is `online`, `offline`, `partial`, `unknown`, or `expected_off`. Explicit connectivity entities can report online/offline; problem-class entities are inverted (problem on means offline). Without one, a current state on an enabled operational entity is positive evidence of state availability, but an off state is not an outage. This is not a heartbeat guarantee. Diagnostic telemetry such as RSSI/LQI and unknown/unavailable states do not establish health. Devices without reliable current state remain unknown.
+Signal `meaning` is `active`, `inactive`, `unavailable`, `unknown`, `missing`, or `expected_off`; battery binary sensors may also use `low` or `ok`. Numeric battery values (percent or voltage) retain `value` and `unit` independently from `meaning`. Device health is `online`, `offline`, `partial`, `unknown`, or `expected_off`. Explicit connectivity entities can report online/offline. A problem-class entity reporting `on` indicates a device fault and yields `partial`; it does not establish loss of connectivity. Without a connectivity entity, a current state on an enabled operational entity is positive evidence of state availability, but an off state is not an outage. This is not a heartbeat guarantee. Diagnostic telemetry such as RSSI/LQI and unknown/unavailable states do not establish health. Devices without reliable current state remain unknown.
 
 ## Preferences
 

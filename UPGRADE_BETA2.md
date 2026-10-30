@@ -13,7 +13,14 @@ This source bundle contains the complete custom integration, compiled panel, fro
 
 ## Apply to a repository checkout
 
-Extract this archive over the root of your existing `ha-device-care` Git checkout. Review the resulting diff, then commit and push it:
+Extract this archive over the root of your existing `ha-device-care` Git checkout. This fixed bundle places TypeScript files under the Vite-configured `frontend-src/src/` directory. If you already applied commit `d3b718dd27fcd0d5ef2e47a973285490eb5a9ad7`, remove only its three misplaced root-level duplicates with PowerShell:
+
+```powershell
+$orphanFiles = @('frontend-src/api.ts', 'frontend-src/device-care.ts', 'frontend-src/types.ts')
+foreach ($file in $orphanFiles) { if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force } }
+```
+
+The bundle does not contain `__pycache__` or `.pyc` files. The repository `.gitignore` excludes those caches; do not stage them. Review the resulting diff, then commit and push it:
 
 ```sh
 git status --short

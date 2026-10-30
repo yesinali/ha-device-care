@@ -29,6 +29,6 @@ SIGNAL_CLASSES = {
     "motion": {"motion"},
     "occupancy": {"occupancy"},
     "battery": {"battery"},
-    "connectivity": {"connectivity", "problem"},
+    "connectivity": {"connectivity"},
 }
 EVENT_UPDATED = "device_care_updated"

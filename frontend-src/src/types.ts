@@ -1,4 +1,4 @@
-export type SignalMeaning = 'active' | 'inactive' | 'unavailable' | 'unknown' | 'missing' | 'expected_off';
+export type SignalMeaning = 'active' | 'inactive' | 'unavailable' | 'unknown' | 'missing' | 'expected_off' | 'low' | 'ok';
 export interface Signal { entity_id: string; state: string; value: number | string | null; unit: string | null; meaning: SignalMeaning }
 export interface DeviceEntity {
   entity_id: string; name: string; state: string; domain: string; device_class: string | null;
