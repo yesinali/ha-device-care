@@ -2,13 +2,19 @@
   "config": {
     "step": {
       "user": {
-        "title": "Cihazlar & Bakım",
-        "description": "Home Assistant kayıt defterinden cihaz seçin.",
-        "data": {"scope": "Cihaz kapsamı", "auto_include_new": "Yeni cihazları otomatik dahil et"}
+        "title": "Cihaz Bakımı",
+        "description": "Home Assistant kayıt defterinden dahil edilecek cihazları seçin.",
+        "data": {
+          "scope": "Cihaz kapsamı",
+          "auto_include_new": "Yeni cihazları otomatik dahil et"
+        }
       },
       "selection": {
-        "title": "Cihaz kapsamını seçin",
-        "data": {"scope_value": "Kapsam değeri", "included_device_ids": "Cihazlar"}
+        "title": "Cihazları seçin",
+        "data": {
+          "scope_value": "Kapsam değeri",
+          "included_device_ids": "Cihazlar"
+        }
       },
       "confirm": {
         "title": "Seçimi onaylayın",
@@ -16,12 +22,24 @@
         "data": {"confirm": "Kurulumu tamamla"}
       }
     },
-    "abort": {"no_scope_choices": "Bu kapsamda seçilebilir değer bulunamadı."}
+    "abort": {"no_scope_choices": "Bu kapsam için seçilebilir değer bulunamadı."}
+  },
+  "selector": {
+    "device_scope": {
+      "options": {
+        "all": "Uygun tüm cihazlar",
+        "area": "Oda",
+        "floor": "Kat",
+        "label": "Etiket",
+        "integration": "Entegrasyon",
+        "manual": "Cihazları elle seç"
+      }
+    }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Cihazlar & Bakım seçenekleri",
+        "title": "Cihaz Bakımı seçenekleri",
         "data": {"retention_days": "Olay saklama süresi (gün)"}
       }
     }

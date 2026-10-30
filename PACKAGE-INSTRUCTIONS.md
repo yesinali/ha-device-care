@@ -1,7 +1,7 @@
-# Device Care beta4 source package
+# Device Care beta5 source package
 
-Extract this archive while preserving its top-level `ha-device-care/` directory. To install in Home Assistant, copy `ha-device-care/custom_components/device_care/` into `<config>/custom_components/device_care/`, then restart Home Assistant.
+Extract this archive while preserving the top-level `ha-device-care/` directory. The Home Assistant integration is in `ha-device-care/custom_components/device_care/`. To install manually, copy that directory into `<config>/custom_components/device_care/` and restart Home Assistant. For HACS installation and end-user guidance, start with `README.md`; the Turkish guide is `README.tr.md`.
 
-`frontend-src/` contains the editable frontend sources and tests. The integration serves the already-built frontend from `custom_components/device_care/frontend/`; after frontend edits, run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build` in `frontend-src/`, then copy the build output as documented in the project README.
+`frontend-src/` contains editable TypeScript/Lit panel source and tests. `custom_components/device_care/frontend/` contains the compiled bundle served by the integration. Contributor setup, testing, and bundle rebuild instructions are in `DEVELOPMENT.md`.
 
-The separate brand patch archive only replaces the integration's two local brand icon files. No repository, tag, or release was published by this package step.
+This archive contains beta5 source but does not represent a published GitHub release.

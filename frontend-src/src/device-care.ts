@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { DeviceCareApi } from './api';
 import type { CareData, Device, DeviceEntity, FirmwareUpdate, HomeAssistant, NamedItem, Preferences, Report, Signal } from './types';
 import brandIcon from './assets/brand-icon.png?inline';
+import { formatLocalDate, formatLocalDuration, resolveLanguage, translate, type LocaleKey } from './locale';
 
 const icon = (name: string) => {
   const paths: Record<string, string> = {
@@ -25,28 +26,7 @@ const icon = (name: string) => {
   };
   return html`<svg viewBox="0 0 24 24" data-icon=${name} aria-hidden="true"><path d=${paths[name] ?? paths.check}></path></svg>`;
 };
-const healthLabel: Record<Device['health'], string> = { online: 'Online', offline: 'Erişilemiyor', partial: 'Kısmi sorun', unknown: 'Durum bilinmiyor', expected_off: 'Bilerek kapalı' };
-const roleLabel = { motion: 'Hareket', occupancy: 'Varlık', battery: 'Pil', connectivity: 'Bağlantı' } as const;
 const safeEntityIcons = new Set(['mdi:television','mdi:lightbulb','mdi:lightbulb-on','mdi:lightbulb-outline','mdi:lightbulb-group','mdi:remote','mdi:remote-tv','mdi:button-pointer','mdi:gesture-tap-button','mdi:power-socket','mdi:power-socket-eu','mdi:power-socket-us','mdi:toggle-switch','mdi:toggle-switch-variant','mdi:motion-sensor','mdi:battery','mdi:thermostat','mdi:thermometer','mdi:fan','mdi:lock','mdi:lock-open','mdi:camera','mdi:blinds','mdi:window-shutter','mdi:door','mdi:door-open','mdi:media-player','mdi:power']);
-const signalText = (kind: 'motion' | 'occupancy', signal: Signal | null) => {
-  const noun = kind === 'motion' ? 'Hareket' : 'Varlık';
-  if (!signal || signal.meaning === 'missing') return 'Veri yok';
-  if (signal.meaning === 'active') return `${noun} algılanıyor`;
-  if (signal.meaning === 'inactive') return `${noun} algılanmıyor`;
-  if (signal.meaning === 'unavailable') return 'Erişilemiyor';
-  if (signal.meaning === 'expected_off') return 'Bilerek kapalı';
-  return 'Durum bilinmiyor';
-};
-const humanize = (value: string | null | undefined) => value ? value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toLocaleUpperCase()) : 'Atanmamış';
-const healthReasonText = (reason: string) => ({
-  no_health_source: 'Çevrimdışı durumunu bildiren bir sensör yok.', no_connectivity_source: 'Bağlantı sensörü yok; erişilebilirlik doğrulanamıyor.',
-  no_reachability_source: 'Bu cihaz türü anlık bağlantı bilgisi sağlamıyor.', health_source_unavailable: 'Bağlantı kaynağı şu anda veri vermiyor.',
-  health_source_unknown: 'Bağlantı durumu doğrulanamıyor.', connectivity_off: 'Bağlantı sensörü cihazı çevrimdışı gösteriyor.',
-  configured_expected_off: 'Kapalı durumu ayarlarda beklenen durum olarak tanımlanmış.', device_problem: 'Cihaz bir sorun bildiriyor.',
-  mixed_connectivity_sources: 'Bağlantı sensörleri birbiriyle uyuşmuyor.', state_available: 'Home Assistant cihazdan güncel durum alıyor.',
-  primary_source_missing: 'Seçilen bağlantı sensörü bulunamıyor.', invalid_primary_source: 'Seçilen kaynak bağlantı sensörü değil.',
-  connectivity_unavailable: 'Bağlantı sensörü şu anda veri vermiyor.', partial_failure: 'Cihazın bazı işlevleri çalışmıyor olabilir.',
-} as Record<string, string>)[reason] ?? 'Durumla ilgili ek açıklama mevcut.';
 
 @customElement('device-care-panel')
 export class DeviceCarePanel extends LitElement {
@@ -66,6 +46,24 @@ export class DeviceCarePanel extends LitElement {
   private api?: DeviceCareApi;
   private refreshTimer?: number;
   private reconnectTimer?: number;
+
+  private get uiLanguage() { return resolveLanguage(this.hass); }
+  private t(key: LocaleKey) { return translate(this.uiLanguage, key); }
+  private healthLabel(health: Device['health']) { return this.t(({ online: 'online', offline: 'unavailable', partial: 'partial_issue', unknown: 'unknown_status', expected_off: 'expected_off_title' } as const)[health]); }
+  private roleLabel(role: 'motion' | 'occupancy' | 'battery' | 'connectivity') { return this.t(({ motion: 'motion_label', occupancy: 'presence_label', battery: 'battery_label', connectivity: 'connectivity_label' } as const)[role]); }
+  private signalText(kind: 'motion' | 'occupancy', signal: Signal | null) {
+    if (!signal || signal.meaning === 'missing') return this.t('no_data');
+    if (signal.meaning === 'active') return this.t(kind === 'motion' ? 'motion_detected' : 'presence_detected');
+    if (signal.meaning === 'inactive') return this.t(kind === 'motion' ? 'no_motion' : 'no_presence');
+    if (signal.meaning === 'unavailable') return this.t('unavailable');
+    if (signal.meaning === 'expected_off') return this.t('expected_off_title');
+    return this.t('unknown_status');
+  }
+  private healthReasonText(reason: string) {
+    const keys: Record<string, LocaleKey> = { no_health_source:'no_health_sensor',no_connectivity_source:'no_connectivity_sensor',no_reachability_source:'no_live_connectivity_for_type',health_source_unavailable:'connectivity_source_no_data',health_source_unknown:'connectivity_not_verified',connectivity_off:'connectivity_reports_offline',configured_expected_off:'configured_off_expected',device_problem:'device_reports_problem',mixed_connectivity_sources:'connectivity_sensors_disagree',state_available:'ha_receives_current_state',primary_source_missing:'selected_connectivity_not_found',invalid_primary_source:'selected_source_not_connectivity',connectivity_unavailable:'connectivity_sensor_no_data',partial_failure:'partial_device_failure' };
+    return this.t(keys[reason] ?? 'status_details_available');
+  }
+  private humanize(value: string | null | undefined) { return value ? value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toLocaleUpperCase()) : this.t('not_assigned'); }
 
   static styles = css`
     :host { display:block; color:var(--primary-text-color); --care-accent:#087f8c; --care-accent-ink:color-mix(in srgb,var(--care-accent) 65%,var(--primary-text-color,#111)); --care-blue-ink:color-mix(in srgb,#2169a6 60%,var(--primary-text-color,#111)); --care-amber-ink:color-mix(in srgb,#9a6200 58%,var(--primary-text-color,#111)); --care-violet-ink:color-mix(in srgb,#6555a5 62%,var(--primary-text-color,#111)); --care-warn:#a95000; --care-warn-ink:color-mix(in srgb,#c56a17 58%,var(--primary-text-color,#111)); --care-accent-soft:color-mix(in srgb,var(--care-accent) 11%,var(--card-background-color,#fff)); --care-warn-soft:color-mix(in srgb,#d8761a 12%,var(--card-background-color,#fff)); --care-border:var(--divider-color,#d9dee3); --care-muted:var(--secondary-text-color,#66717c); }
@@ -122,7 +120,7 @@ export class DeviceCarePanel extends LitElement {
     this.api = new DeviceCareApi(this.hass.connection);
     await this.load();
     try { await this.api.subscribe((reason) => this.queueRefresh(reason)); }
-    catch (e) { this.error = `Canlı güncelleme bağlantısı kurulamadı: ${this.message(e)}`; this.scheduleReconnect(); }
+    catch (e) { this.error = `${this.t('live_update_error')}: ${this.message(e)}`; this.scheduleReconnect(); }
   }
   private async load() {
     if (!this.api) return;
@@ -131,7 +129,11 @@ export class DeviceCarePanel extends LitElement {
     catch (e) { this.error = this.message(e); }
     finally { this.loading = false; }
   }
-  private message(error: unknown) { return error instanceof Error ? error.message : String(error); }
+  private message(error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (/backend unavailable|connection (?:lost|closed|unavailable)|not connected|networkerror|failed to fetch/i.test(detail)) return this.t('home_assistant_unreachable');
+    return this.uiLanguage === 'en-US' ? detail : `${this.t('request_failed')} ${this.t('technical_details')}: ${detail}`;
+  }
   private queueRefresh(_reason: string) {
     if (this.refreshTimer) window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => { void this.load(); }, 80);
@@ -163,18 +165,18 @@ export class DeviceCarePanel extends LitElement {
   }
   private healthRank(h: Device['health']) { return ({ offline: 0, partial: 1, unknown: 2, expected_off: 3, online: 4 } as const)[h]; }
   private healthText(device: Device) {
-    if (device.health !== 'unknown' || this.deviceType(device) !== 'remote') return healthLabel[device.health];
-    if (device.health_reason === 'no_reachability_source') return 'Erişilebilirlik bilgisi yok';
-    return 'Bağlantı doğrulanamıyor';
+    if (device.health !== 'unknown' || this.deviceType(device) !== 'remote') return this.healthLabel(device.health);
+    if (device.health_reason === 'no_reachability_source') return this.t('reachability_unavailable');
+    return this.t('connectivity_not_verified');
   }
   private groupName(device: Device) {
     const by = this.data?.preferences.group_by ?? 'area';
-    if (by === 'floor') return this.data?.floors.find((x) => x.id === device.floor_id)?.name ?? 'Kat atanmamış';
-    if (by === 'integration') return (device.integrations?.length ? device.integrations : [device.integration].filter((value): value is string => Boolean(value))).map(humanize).join(', ') || 'Entegrasyon yok';
-    if (by === 'none') return 'Tüm cihazlar';
-    return this.data?.areas.find((x) => x.id === device.area_id)?.name ?? 'Atanmamış';
+    if (by === 'floor') return this.data?.floors.find((x) => x.id === device.floor_id)?.name ?? this.t('floor_unassigned');
+    if (by === 'integration') return (device.integrations?.length ? device.integrations : [device.integration].filter((value): value is string => Boolean(value))).map((value) => this.humanize(value)).join(', ') || this.t('no_integration');
+    if (by === 'none') return this.t('group_all_devices');
+    return this.data?.areas.find((x) => x.id === device.area_id)?.name ?? this.t('not_assigned');
   }
-  private areaName(device: Device) { return this.data?.areas.find((area) => area.id === device.area_id)?.name ?? 'Oda atanmamış'; }
+  private areaName(device: Device) { return this.data?.areas.find((area) => area.id === device.area_id)?.name ?? this.t('no_area_assigned'); }
   private deviceType(device: Device): NonNullable<Device['device_type']> {
     if (device.device_type) return device.device_type;
     for (const domain of ['light','switch','camera','cover','climate','fan','lock'] as const) if (device.entities.some((entity) => entity.domain === domain)) return domain;
@@ -206,57 +208,57 @@ export class DeviceCarePanel extends LitElement {
     const type = this.deviceType(device);
     if (type === 'light' || type === 'switch' || type === 'cover' || type === 'fan' || type === 'lock' || type === 'climate') {
       const entity = device.entities.find((item) => item.domain === type && !item.disabled);
-      if (!entity) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum ölçümü yok</span>`;
-      if (entity.state === 'unavailable') return html`<span class="signal-pill state-unavailable">${this.deviceIcon(device)}Durum erişilemiyor</span>`;
-      if (entity.state === 'unknown') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum bilinmiyor</span>`;
+      if (!entity) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('status_no_sensor')}</span>`;
+      if (entity.state === 'unavailable') return html`<span class="signal-pill state-unavailable">${this.deviceIcon(device)}${this.t('status_unavailable_sensor')}</span>`;
+      if (entity.state === 'unknown') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('unknown_status')}</span>`;
       if (type === 'climate') {
-        const state = entity.state === 'off' ? 'Kapalı' : entity.state === 'unknown' ? 'Durum bilinmiyor' : humanize(entity.state);
+        const state = entity.state === 'off' ? this.t('off') : entity.state === 'unknown' ? this.t('unknown_status') : this.humanize(entity.state);
         const temperature = entity.attributes.current_temperature;
         const tempText = typeof temperature === 'number' && Number.isFinite(temperature) ? ` · ${temperature}°${typeof entity.attributes.temperature_unit === 'string' ? entity.attributes.temperature_unit : ''}` : '';
         return html`<span class="signal-pill ${entity.state === 'off' ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${state}${entity.state !== 'off' ? tempText : ''}</span>`;
       }
       if (type === 'cover') {
-        const state = ({ open:'Açık', closed:'Kapalı', opening:'Açılıyor', closing:'Kapanıyor' } as Record<string,string>)[entity.state] ?? entity.state;
+        const state = ({ open:this.t('on'), closed:this.t('off'), opening:this.t('opening'), closing:this.t('closing') } as Record<string,string>)[entity.state] ?? entity.state;
         return html`<span class="signal-pill ${entity.state === 'closed' ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${state}</span>`;
       }
       if (type === 'lock') {
         const locked = entity.state === 'locked';
-        if (!locked && entity.state !== 'unlocked') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum bilinmiyor</span>`;
-        return html`<span class="signal-pill ${locked ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${locked ? 'Kilitli' : 'Kilit açık'}</span>`;
+        if (!locked && entity.state !== 'unlocked') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('unknown_status')}</span>`;
+        return html`<span class="signal-pill ${locked ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${locked ? this.t('locked') : this.t('unlocked')}</span>`;
       }
-      if (!['on','off'].includes(entity.state)) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Durum bilinmiyor</span>`;
+      if (!['on','off'].includes(entity.state)) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('unknown_status')}</span>`;
       const active = entity.state === 'on';
       const brightness = Number(entity.attributes.brightness);
       const level = type === 'light' && active && Number.isFinite(brightness) ? ` · %${Math.round(brightness / 255 * 100)}` : '';
-      return html`<span class="signal-pill ${active ? 'state-on' : 'state-off'}">${this.deviceIcon(device)}${active ? 'Açık' : 'Kapalı'}${level}</span>`;
+      return html`<span class="signal-pill ${active ? 'state-on' : 'state-off'}">${this.deviceIcon(device)}${active ? this.t('on') : this.t('off')}${level}</span>`;
     }
     if (type === 'remote') {
       const activity = device.activity;
       const timestamp = activity?.last_event_at ? this.formatDate(activity.last_event_at) : null;
-      const event = activity?.event_type ? ` · ${humanize(activity.event_type)}` : '';
-      return html`${device.signals.connectivity ? this.renderConnectivity(device.signals.connectivity) : html`<span class="signal-pill unknown">${this.deviceIcon(device)}Anlık bağlantı bilgisi yok</span>`}${timestamp || activity?.event_type ? html`<span class="signal-pill">${icon('remote')}${timestamp ? `Son basış ${timestamp}` : 'Son olay zamanı yok'}${event}</span>` : nothing}${device.signals.battery ? this.renderBattery(device.signals.battery) : nothing}`;
+      const event = activity?.event_type ? ` · ${this.humanize(activity.event_type)}` : '';
+      return html`${device.signals.connectivity ? this.renderConnectivity(device.signals.connectivity) : html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('live_connectivity_unavailable')}</span>`}${timestamp || activity?.event_type ? html`<span class="signal-pill">${icon('remote')}${timestamp ? `${this.t('last_press')} ${timestamp}` : this.t('no_event_time')}${event}</span>` : nothing}${device.signals.battery ? this.renderBattery(device.signals.battery) : nothing}`;
     }
     if (type === 'tv') {
       const player = device.entities.find((entity) => entity.domain === 'media_player' && !entity.disabled);
-      if (!player) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}TV durumu yok</span>`;
-      if (player.state === 'unavailable') return html`<span class="signal-pill state-unavailable">${this.deviceIcon(device)}TV erişilemiyor</span>`;
-      if (player.state === 'unknown') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}TV durumu bilinmiyor</span>`;
-      const state = ({ on:'Açık',off:'Kapalı',playing:'Oynatıyor',paused:'Duraklatıldı',idle:'Boşta',standby:'Beklemede',buffering:'Yükleniyor' } as Record<string,string>)[player.state] ?? humanize(player.state);
+      if (!player) return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('tv_status_unavailable')}</span>`;
+      if (player.state === 'unavailable') return html`<span class="signal-pill state-unavailable">${this.deviceIcon(device)}${this.t('tv_unavailable')}</span>`;
+      if (player.state === 'unknown') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('tv_status_unknown')}</span>`;
+      const state = ({ on:this.t('on'),off:this.t('off'),playing:this.t('playing'),paused:this.t('paused'),idle:this.t('idle'),standby:this.t('standby'),buffering:this.t('buffering') } as Record<string,string>)[player.state] ?? this.humanize(player.state);
       return html`<span class="signal-pill ${player.state === 'off' || player.state === 'standby' ? 'state-off' : 'state-on'}">${this.deviceIcon(device)}${state}</span>`;
     }
-    if (type === 'button') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Düğme · anlık durum yok</span>`;
+    if (type === 'button') return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('button_no_live_status')}</span>`;
     const hasMovement = Boolean(device.signals.motion || device.signals.occupancy);
     if (hasMovement) return this.renderMotion(device);
     if (device.signals.battery) return this.renderBattery(device.signals.battery);
-    if (device.signals.connectivity?.meaning === 'unavailable') return html`<span class="signal-pill state-unavailable">${icon('wifi')}Erişilemiyor</span>`;
+    if (device.signals.connectivity?.meaning === 'unavailable') return html`<span class="signal-pill state-unavailable">${icon('wifi')}${this.t('unavailable')}</span>`;
     if (device.signals.connectivity) return this.renderConnectivity(device.signals.connectivity);
-    return html`<span class="signal-pill unknown">${this.deviceIcon(device)}Bu cihaz türünde durum ölçümü yok</span>`;
+    return html`<span class="signal-pill unknown">${this.deviceIcon(device)}${this.t('no_device_status_for_type')}</span>`;
   }
   private async patch(patch: Partial<Preferences>) {
     if (!this.api || !this.data) return;
     this.saving = true;
     try { const preferences = await this.api.setPreferences(patch); this.data = { ...this.data, preferences }; this.error = ''; if (!this.editing) await this.load(); }
-    catch (e) { this.error = `Ayarlar kaydedilemedi: ${this.message(e)}`; }
+    catch (e) { this.error = `${this.t('settings_save_error')}: ${this.message(e)}`; }
     finally { this.saving = false; }
   }
   private async saveEditor() { const { schema_version: _version, ...preferences } = this.data!.preferences; await this.patch(preferences); if (!this.error) this.editing = false; }
@@ -270,32 +272,32 @@ export class DeviceCarePanel extends LitElement {
       const number = Number(value); const attrs = entity.attributes;
       const min = Number(attrs.min ?? 0); const max = Number(attrs.max ?? 100); const step = Number(attrs.step ?? 1);
       if (!Number.isFinite(number) || number < min || number > max || (Number.isFinite(step) && step > 0 && Math.abs((number - min) / step - Math.round((number - min) / step)) > 1e-7)) {
-        this.error = `${entity.name}: Değer ${min}–${max} aralığında ve ${step} adımına uygun olmalı.`; return;
+        this.error = `${entity.name}: ${this.t('title_error_value')}${min}–${max}${this.t('range_middle')}${step}${this.t('step_suffix')}`; return;
       }
       value = number;
     }
     if (entity.domain === 'select') {
       const options = Array.isArray(entity.attributes.options) ? entity.attributes.options as string[] : [];
-      if (typeof value !== 'string' || !options.includes(value)) { this.error = `${entity.name}: Listeden geçerli bir seçenek seçin.`; return; }
+      if (typeof value !== 'string' || !options.includes(value)) { this.error = `${entity.name}: ${this.t('select_valid_option')}`; return; }
     }
     const service = entity.domain === 'number' ? 'set_value' : entity.domain === 'select' ? 'select_option' : 'turn_on';
     const data = entity.domain === 'number' ? { value: Number(value) } : entity.domain === 'select' ? { option: String(value) } : {};
     this.savingEntity = entity.entity_id;
     try { await this.api.callEntity(entity.entity_id, service, data, this.settingsUnlocked); await this.load(); }
-    catch (e) { this.error = `“${entity.name}” güncellenemedi: ${this.message(e)}`; }
+    catch (e) { this.error = `“${entity.name}”${this.t('device_error_prefix')}${this.message(e)}`; }
     finally { this.savingEntity = undefined; }
   }
   private async toggleSwitch(entity: DeviceEntity) {
     if (!this.api || !this.canChangeSettings(entity) || entity.domain !== 'switch' || !['on','off'].includes(entity.state)) return;
     this.savingEntity = entity.entity_id;
     try { await this.api.callEntity(entity.entity_id, entity.state === 'on' ? 'turn_off' : 'turn_on', undefined, this.settingsUnlocked); await this.load(); }
-    catch (e) { this.error = `“${entity.name}” güncellenemedi: ${this.message(e)}`; }
+    catch (e) { this.error = `“${entity.name}”${this.t('device_error_prefix')}${this.message(e)}`; }
     finally { this.savingEntity = undefined; }
   }
   private async showReport(generate = false) {
     if (!this.api) return;
     try { this.report = generate ? await this.api.generateReport(this.reportWindow) : await this.api.getReport(this.reportWindow); this.error = ''; }
-    catch (e) { this.error = `Rapor alınamadı: ${this.message(e)}`; }
+    catch (e) { this.error = `${this.t('report_error_prefix')}${this.message(e)}`; }
   }
   private groupDevices(devices: Device[]) {
     const groups = new Map<string, Device[]>();
@@ -312,12 +314,12 @@ export class DeviceCarePanel extends LitElement {
   }
   private renderSettingsGate() {
     if (!this.data?.is_admin || !this.data.capabilities.settings) return nothing;
-    return html`<label class="control-safety ${this.settingsUnlocked ? 'unlocked' : ''}"><input type="checkbox" aria-label="Cihaz ayarı değişikliklerine izin ver" .checked=${this.settingsUnlocked} @change=${(event: Event) => this.setSettingsUnlocked((event.target as HTMLInputElement).checked)}><span><strong>${this.settingsUnlocked ? 'Cihaz ayarı değişikliklerine izin verildi' : 'Cihaz ayarları kilitli'}</strong><small>${this.settingsUnlocked ? 'Bu oturumda uygun ayarlar değiştirilebilir. İşiniz bitince kilitleyin.' : 'Değişiklikleri açmak için kutuyu işaretleyin. Ayar değiştirme izni varsayılan olarak kapalıdır.'}</small></span></label>`;
+    return html`<label class="control-safety ${this.settingsUnlocked ? 'unlocked' : ''}"><input type="checkbox" aria-label=${this.t('allow_device_setting_changes')} .checked=${this.settingsUnlocked} @change=${(event: Event) => this.setSettingsUnlocked((event.target as HTMLInputElement).checked)}><span><strong>${this.settingsUnlocked ? this.t('device_settings_unlocked') : this.t('device_settings_locked')}</strong><small>${this.settingsUnlocked ? this.t('settings_unlocked_hint') : this.t('settings_locked_hint')}</small></span></label>`;
   }
 
   render() {
-    if (this.loading && !this.data) return html`<div class="loading">Cihazlar yükleniyor…</div>`;
-    if (!this.data) return html`<main class="shell"><h1>Cihazlar & Bakım</h1>${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}<button class="button" @click=${() => this.load()}>Yeniden dene</button></main>`;
+    if (this.loading && !this.data) return html`<div class="loading">${this.t('loading_devices')}</div>`;
+    if (!this.data) return html`<main class="shell"><h1>${this.t('devices_and_care')}</h1>${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}<button class="button" @click=${() => this.load()}>${this.t('retry')}</button></main>`;
     const devices = this.visibleDevices;
     const selected = devices.find((d) => d.id === this.selectedId);
     const layout = this.data.preferences.layout;
@@ -327,52 +329,52 @@ export class DeviceCarePanel extends LitElement {
     const unknown = devices.filter((d) => d.health === 'unknown').length;
     const lowBattery = devices.filter((d) => { const signal = d.signals.battery; const value = signal ? this.batteryNumber(signal) : null; return signal?.meaning === 'low' || (signal?.unit?.trim() === '%' && value !== null && value < 20); }).length;
     return html`<main class="shell">
-      <header class="top"><div><h1 class="brand-title"><img src=${brandIcon} alt="" aria-hidden="true">Cihazlar & Bakım</h1><p class="subtitle">${devices.length} cihaz izleniyor · ${this.data.monitoring_since ? `İzleme başlangıcı ${this.formatDate(this.data.monitoring_since)}` : 'İzleme başlangıç zamanı yok'}</p></div><div class="top-actions">
-        ${this.data.is_admin ? html`<button class="button" @click=${() => { this.editing = !this.editing; if (!this.editing) void this.load(); }}>${icon(this.editing ? 'close' : 'edit')}<span class="button-label">${this.editing ? 'Düzenlemeyi kapat' : 'Düzenle'}</span></button>` : nothing}
-        <button class="button" @click=${() => this.report ? (this.report = undefined) : void this.showReport()}>${icon('report')}<span class="button-label">${this.report ? 'Raporu kapat' : 'Raporlar'}</span></button>
+      <header class="top"><div><h1 class="brand-title"><img src=${brandIcon} alt="" aria-hidden="true">${this.t('devices_and_care')}</h1><p class="subtitle">${devices.length}${this.t('monitoring_devices')}${this.data.monitoring_since ? `${this.t('monitoring_since_label')}${this.formatDate(this.data.monitoring_since)}` : this.t('monitoring_start_unavailable')}</p></div><div class="top-actions">
+        ${this.data.is_admin ? html`<button class="button" @click=${() => { this.editing = !this.editing; if (!this.editing) void this.load(); }}>${icon(this.editing ? 'close' : 'edit')}<span class="button-label">${this.editing ? this.t('close_editor') : this.t('edit')}</span></button>` : nothing}
+        <button class="button" @click=${() => this.report ? (this.report = undefined) : void this.showReport()}>${icon('report')}<span class="button-label">${this.report ? this.t('close_report') : this.t('reports')}</span></button>
       </div></header>
       ${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}
-      <section class="summary" aria-label="Cihaz sağlığı özeti"><span class="summary-title">Genel durum</span><span class="metric good">${icon('check')} <strong>${accessible}</strong> erişilebilir</span><span class="metric ${offline ? 'warn' : ''}">${icon('alert')} <strong>${offline}</strong> sorunlu</span><span class="metric"><strong>${unknown}</strong> belirsiz</span><span class="metric"><strong>${expected}</strong> bilerek kapalı</span><span class="metric ${lowBattery ? 'warn' : ''}">${icon('battery')} <strong>${lowBattery}</strong> düşük pil</span></section>
+      <section class="summary" aria-label="${this.t('device_health_summary')}"><span class="summary-title">${this.t('overall_status')}</span><span class="metric good">${icon('check')} <strong>${accessible}</strong> ${this.t('reachable')}</span><span class="metric ${offline ? 'warn' : ''}">${icon('alert')} <strong>${offline}</strong> ${this.t('issues')}</span><span class="metric"><strong>${unknown}</strong> ${this.t('unknown')}</span><span class="metric"><strong>${expected}</strong> ${this.t('expected_off')}</span><span class="metric ${lowBattery ? 'warn' : ''}">${icon('battery')} <strong>${lowBattery}</strong> ${this.t('low_battery')}</span></section>
       ${this.renderSettingsGate()}
       ${this.report ? this.renderReport() : nothing}
       ${this.editing ? this.renderEditor(this.data.all_devices) : nothing}
-      <div class="toolbar"><label class="search">${icon('search')}<input aria-label="Cihazlarda ara" placeholder="Cihaz, üretici veya entity ara" .value=${this.query} @input=${(e: InputEvent) => this.query = (e.target as HTMLInputElement).value}></label>
-        <select class="select" aria-label="Sıralama" .value=${this.data.preferences.sort} @change=${(e: Event) => void this.patch({ sort: (e.target as HTMLSelectElement).value as Preferences['sort'] })}><option value="name">Ada göre</option><option value="health">Sağlık durumuna göre</option><option value="area">Odaya göre</option></select>
-        <div class="tabs" role="tablist" aria-label="Görünüm"><button class=${layout === 'inventory' ? 'active' : ''} role="tab" aria-selected=${layout === 'inventory'} @click=${() => void this.patch({ layout: 'inventory' })}>${icon('grid')} Liste</button><button class=${layout === 'rooms' ? 'active' : ''} role="tab" aria-selected=${layout === 'rooms'} @click=${() => void this.patch({ layout: 'rooms' })}>${icon('room')} Odalar</button></div>
+      <div class="toolbar"><label class="search">${icon('search')}<input aria-label="${this.t('search_devices')}" placeholder="${this.t('search_device_manufacturer_or_entity')}" .value=${this.query} @input=${(e: InputEvent) => this.query = (e.target as HTMLInputElement).value}></label>
+        <select class="select" aria-label="${this.t('sort_by')}" .value=${this.data.preferences.sort} @change=${(e: Event) => void this.patch({ sort: (e.target as HTMLSelectElement).value as Preferences['sort'] })}><option value="name">${this.t('name')}</option><option value="health">${this.t('health')}</option><option value="area">${this.t('area')}</option></select>
+        <div class="tabs" role="tablist" aria-label="${this.t('view')}"><button class=${layout === 'inventory' ? 'active' : ''} role="tab" aria-selected=${layout === 'inventory'} @click=${() => void this.patch({ layout: 'inventory' })}>${icon('grid')} ${this.t('list')}</button><button class=${layout === 'rooms' ? 'active' : ''} role="tab" aria-selected=${layout === 'rooms'} @click=${() => void this.patch({ layout: 'rooms' })}>${icon('room')} ${this.t('rooms')}</button></div>
       </div>
-      ${devices.length ? layout === 'inventory' ? this.renderInventory(devices) : this.renderRooms(devices) : html`<div class="empty">Bu arama ve kapsamda cihaz bulunamadı.</div>`}
+      ${devices.length ? layout === 'inventory' ? this.renderInventory(devices) : this.renderRooms(devices) : html`<div class="empty">${this.t('no_devices_match_this_search_and_scope')}</div>`}
       ${selected ? this.renderDrawer(selected) : nothing}
     </main>`;
   }
 
   private renderInventory(devices: Device[]) {
     const columns = new Set(this.data!.preferences.visible_columns);
-    return html`<section class="inventory"><div class="table-scroll"><table><thead><tr><th>Cihaz</th><th>Sağlık</th>${columns.has('area') ? html`<th>Oda</th>` : nothing}${columns.has('motion') ? html`<th>Durum</th>` : nothing}${columns.has('battery') ? html`<th>Pil</th>` : nothing}${columns.has('connectivity') ? html`<th>Bağlantı</th>` : nothing}${columns.has('firmware') ? html`<th>Firmware</th>` : nothing}<th></th></tr></thead><tbody>
+    return html`<section class="inventory"><div class="table-scroll"><table><thead><tr><th>${this.t('device')}</th><th>${this.t('health_2')}</th>${columns.has('area') ? html`<th>${this.t('area_2')}</th>` : nothing}${columns.has('motion') ? html`<th>${this.t('status')}</th>` : nothing}${columns.has('battery') ? html`<th>${this.t('battery')}</th>` : nothing}${columns.has('connectivity') ? html`<th>${this.t('connectivity')}</th>` : nothing}${columns.has('firmware') ? html`<th>${this.t('firmware')}</th>` : nothing}<th></th></tr></thead><tbody>
       ${devices.map((device) => html`<tr class=${this.selectedId === device.id ? 'selected' : ''} @click=${() => this.selectDevice(device)} tabindex="0" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') this.selectDevice(device); }}>
         <td><div class="device-name"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><span><span class="name">${device.name}</span>${device.model ? html`<span class="sub">${device.model}</span>` : nothing}<span class="sub">${this.devicePlatformLine(device)}</span></span></div></td>
-        <td data-mobile><span class="health-pill ${device.health}" title=${device.health_reason ? healthReasonText(device.health_reason) : healthLabel[device.health]}>${icon(device.health === 'online' ? 'check' : 'alert')}${this.healthText(device)}</span></td>
+        <td data-mobile><span class="health-pill ${device.health}" title=${device.health_reason ? this.healthReasonText(device.health_reason) : this.healthLabel(device.health)}>${icon(device.health === 'online' ? 'check' : 'alert')}${this.healthText(device)}</span></td>
         ${columns.has('area') ? html`<td>${this.areaName(device)}</td>` : nothing}
         ${columns.has('motion') ? html`<td data-mobile>${this.statusText(device)}</td>` : nothing}
         ${columns.has('battery') ? html`<td data-mobile>${this.renderDeviceBattery(device)}</td>` : nothing}
         ${columns.has('connectivity') ? html`<td data-mobile>${this.renderConnectivity(device.signals.connectivity)}</td>` : nothing}
         ${columns.has('firmware') ? html`<td data-mobile>${this.renderFirmwareSummary(device)}</td>` : nothing}
         <td>${icon('chevron')}</td></tr>`)}
-      </tbody></table></div><footer class="table-footer"><span>${devices.length} cihaz</span><span>Bir cihazı seçerek ayrıntılarını ve desteklenen ayarları açın</span></footer></section>`;
+      </tbody></table></div><footer class="table-footer"><span>${devices.length} ${this.t('device_count')}</span><span>${this.t('select_a_device_to_view_details_and_supp')}</span></footer></section>`;
   }
   private renderRooms(devices: Device[]) {
-    return html`<section class="room-grid">${this.groupDevices(devices).map(([group, items]) => html`<article class="room"><button class="room-head" aria-expanded=${this.openGroups[group] !== false} @click=${() => this.openGroups = { ...this.openGroups, [group]: this.openGroups[group] === false }}>${icon('room')}<span class="room-title">${group}</span><small>${items.length} cihaz</small>${icon('down')}</button>${this.openGroups[group] === false ? nothing : html`<div class="room-body">${items.map((device) => this.renderDeviceCard(device))}</div>`}</article>`)}</section>`;
+    return html`<section class="room-grid">${this.groupDevices(devices).map(([group, items]) => html`<article class="room"><button class="room-head" aria-expanded=${this.openGroups[group] !== false} @click=${() => this.openGroups = { ...this.openGroups, [group]: this.openGroups[group] === false }}>${icon('room')}<span class="room-title">${group}</span><small>${items.length} ${this.t('device_count')}</small>${icon('down')}</button>${this.openGroups[group] === false ? nothing : html`<div class="room-body">${items.map((device) => this.renderDeviceCard(device))}</div>`}</article>`)}</section>`;
   }
   private renderDeviceCard(device: Device) {
-    return html`<article class="device-card" role="button" tabindex="0" @click=${() => this.selectDevice(device)} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.selectDevice(device); }}><div class="card-head"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><span class="name">${device.name}</span><span class="health-pill ${device.health}" title=${device.health_reason ? healthReasonText(device.health_reason) : healthLabel[device.health]}>${this.healthText(device)}</span></div><p class="card-meta">${device.model ? html`<span>${device.model}</span>` : nothing}<span class="card-meta-secondary">${this.devicePlatformLine(device)}</span></p><div class="signals">${this.statusText(device)}</div></article>`;
+    return html`<article class="device-card" role="button" tabindex="0" @click=${() => this.selectDevice(device)} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.selectDevice(device); }}><div class="card-head"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><span class="name">${device.name}</span><span class="health-pill ${device.health}" title=${device.health_reason ? this.healthReasonText(device.health_reason) : this.healthLabel(device.health)}>${this.healthText(device)}</span></div><p class="card-meta">${device.model ? html`<span>${device.model}</span>` : nothing}<span class="card-meta-secondary">${this.devicePlatformLine(device)}</span></p><div class="signals">${this.statusText(device)}</div></article>`;
   }
   private renderMotion(device: Device) {
     const motion = device.signals.motion; const occupancy = device.signals.occupancy;
     const rawItems = [motion && ['motion', motion] as const, occupancy && ['occupancy', occupancy] as const].filter(Boolean) as (readonly ['motion' | 'occupancy', Signal])[];
     const items = rawItems.filter(([_, signal], index) => rawItems.findIndex(([, other]) => other.entity_id === signal.entity_id) === index);
-    if (!items.length) return html`<span class="signal-pill unknown">${icon('motion')}Veri yok</span>`;
+    if (!items.length) return html`<span class="signal-pill unknown">${icon('motion')}${this.t('no_data')}</span>`;
     return html`${items.map(([kind, signal]) => {
       const cls = signal.meaning === 'active' ? 'active' : signal.meaning === 'unavailable' ? 'warning' : signal.meaning === 'expected_off' ? 'expected' : signal.meaning === 'unknown' || signal.meaning === 'missing' ? 'unknown' : '';
-      return html`<span class="signal-pill ${cls}" aria-label=${`${roleLabel[kind]}: ${signalText(kind, signal)}`}>${icon('motion')}${signalText(kind, signal)}</span>`;
+      return html`<span class="signal-pill ${cls}" aria-label=${`${this.roleLabel(kind)}: ${this.signalText(kind, signal)}`}>${icon('motion')}${this.signalText(kind, signal)}</span>`;
     })}`;
   }
   private batteryNumber(signal: Signal) {
@@ -382,47 +384,47 @@ export class DeviceCarePanel extends LitElement {
     return parse(signal.value);
   }
   private renderBattery(signal: Signal | null) {
-    if (!signal || signal.meaning === 'missing') return html`<span class="signal-pill unknown">${icon('battery')}Pil verisi yok</span>`;
-    if (signal.meaning === 'unavailable' || signal.state === 'unavailable') return html`<span class="signal-pill warning">${icon('battery')}Pil erişilemiyor</span>`;
-    if (signal.state === 'unknown') return html`<span class="signal-pill unknown">${icon('battery')}Pil bilinmiyor</span>`;
-    if (signal.meaning === 'low') return html`<span class="signal-pill low">${icon('battery')}Pil düşük</span>`;
-    if (signal.meaning === 'ok') return html`<span class="signal-pill">${icon('battery')}Pil normal</span>`;
-    if (signal.meaning === 'expected_off') return html`<span class="signal-pill expected">${icon('battery')}Bilerek kapalı</span>`;
+    if (!signal || signal.meaning === 'missing') return html`<span class="signal-pill unknown">${icon('battery')}${this.t('battery_data_unavailable')}</span>`;
+    if (signal.meaning === 'unavailable' || signal.state === 'unavailable') return html`<span class="signal-pill warning">${icon('battery')}${this.t('battery_unavailable')}</span>`;
+    if (signal.state === 'unknown') return html`<span class="signal-pill unknown">${icon('battery')}${this.t('battery_unknown')}</span>`;
+    if (signal.meaning === 'low') return html`<span class="signal-pill low">${icon('battery')}${this.t('battery_low')}</span>`;
+    if (signal.meaning === 'ok') return html`<span class="signal-pill">${icon('battery')}${this.t('battery_normal')}</span>`;
+    if (signal.meaning === 'expected_off') return html`<span class="signal-pill expected">${icon('battery')}${this.t('expected_off_title')}</span>`;
     const raw = signal.value;
     const numeric = this.batteryNumber(signal);
     const low = numeric !== null && signal.unit?.trim() === '%' && numeric < 20;
     const value = numeric !== null ? `${numeric}${signal.unit ? ` ${signal.unit}` : ''}` : raw === null ? signal.state : `${raw}${signal.unit ? ` ${signal.unit}` : ''}`;
-    if (signal.meaning === 'unknown' && numeric === null) return html`<span class="signal-pill unknown">${icon('battery')}Pil bilinmiyor</span>`;
+    if (signal.meaning === 'unknown' && numeric === null) return html`<span class="signal-pill unknown">${icon('battery')}${this.t('battery_value_unknown')}</span>`;
     const cls = signal.meaning === 'unknown' && numeric === null ? 'unknown' : '';
-    const uncertain = signal.meaning === 'unknown' && numeric === null ? ' · durum bilinmiyor' : '';
-    return html`<span class="signal-pill ${cls} ${low ? 'low' : ''}">${icon('battery')}Pil ${value}${uncertain}</span>`;
+    const uncertain = signal.meaning === 'unknown' && numeric === null ? this.t('battery_unknown_suffix') : '';
+    return html`<span class="signal-pill ${cls} ${low ? 'low' : ''}">${this.t('battery_label')} ${value}${uncertain}</span>`;
   }
   private renderDeviceBattery(device: Device) {
     if (device.signals.battery) return this.renderBattery(device.signals.battery);
     const supportsBattery = device.capabilities?.includes('battery') ?? device.entities.some((entity) => entity.device_class === 'battery' || `${entity.entity_id} ${entity.name}`.toLocaleLowerCase().includes('battery'));
-    return html`<span class="signal-pill unknown">${icon('battery')}${supportsBattery ? 'Pil verisi yok' : 'Pil ölçümü yok'}</span>`;
+    return html`<span class="signal-pill unknown">${icon('battery')}${supportsBattery ? this.t('battery_data_unavailable') : this.t('no_battery_measurement')}</span>`;
   }
   private renderConnectivity(signal: Signal | null) {
     if (!signal || signal.meaning === 'missing') return html``;
-    const text = signal.meaning === 'unavailable' ? 'Bağlantı erişilemiyor' : signal.meaning === 'unknown' ? 'Bağlantı bilinmiyor' : signal.meaning === 'active' ? 'Bağlı' : signal.meaning === 'inactive' ? 'Bağlantı yok' : String(signal.value ?? signal.state);
+    const text = signal.meaning === 'unavailable' ? this.t('connectivity_unavailable') : signal.meaning === 'unknown' ? this.t('connectivity_unknown') : signal.meaning === 'active' ? this.t('connected') : signal.meaning === 'inactive' ? this.t('not_connected') : String(signal.value ?? signal.state);
     return html`<span class="signal-pill ${signal.meaning === 'unavailable' ? 'warning' : signal.meaning === 'unknown' ? 'unknown' : ''}">${icon('wifi')}${text}</span>`;
   }
   private firmwareState(update: FirmwareUpdate) {
-    if (update.state === 'unavailable') return { label:'Erişilemiyor', className:'warning' };
-    if (update.state === 'unknown') return { label:'Durum bilinmiyor', className:'unknown' };
-    if (update.update_available === true || update.state === 'on') return { label:'Güncelleme var', className:'warning' };
-    if (update.state === 'off' && update.skipped_version) return { label:`Atlandı · ${update.skipped_version}`, className:'unknown' };
-    if (update.state === 'off') return { label:'Güncel', className:'active' };
-    return { label:'Durum bilinmiyor', className:'unknown' };
+    if (update.state === 'unavailable') return { label:this.t('update_unavailable'), className:'warning' };
+    if (update.state === 'unknown') return { label:this.t('update_unknown'), className:'unknown' };
+    if (update.update_available === true || update.state === 'on') return { label:this.t('updates_available'), className:'warning' };
+    if (update.state === 'off' && update.skipped_version) return { label:`${this.t('update_skipped')} · ${update.skipped_version}`, className:'unknown' };
+    if (update.state === 'off') return { label:this.t('up_to_date'), className:'active' };
+    return { label:this.t('update_unknown'), className:'unknown' };
   }
   private renderFirmwareSummary(device: Device) {
     const updates = device.firmware_updates ?? [];
-    if (!updates.length) return html`<span class="signal-pill unknown">${device.reported_sw_version ? `Sürüm ${device.reported_sw_version} · güncellik bilinmiyor` : 'HA güncelleme kaynağı yok'}</span>`;
+    if (!updates.length) return html`<span class="signal-pill unknown">${device.reported_sw_version ? `${this.t('version')} ${device.reported_sw_version} · ${this.t('firmware_freshness_unknown')}` : this.t('no_firmware_update_source')}</span>`;
     const states = updates.map((update) => this.firmwareState(update));
-    const first = states.find((status) => status.label === 'Güncelleme var') ?? states[0];
+    const first = states.find((status) => status.label === this.t('updates_available')) ?? states[0];
     const version = updates.find((update) => update.latest_version)?.latest_version;
     const more = updates.length > 1 ? ` · +${updates.length - 1}` : '';
-    return html`<span class="signal-pill ${first.className}">${first.label}${version && first.label === 'Güncelleme var' ? ` · ${version}` : ''}${more}</span>`;
+    return html`<span class="signal-pill ${first.className}">${first.label}${version && first.label === this.t('updates_available') ? ` · ${version}` : ''}${more}</span>`;
   }
   private safeReleaseUrl(value: string | null) {
     if (!value) return null;
@@ -431,37 +433,37 @@ export class DeviceCarePanel extends LitElement {
   }
   private renderFirmwareDetails(device: Device) {
     const updates = device.firmware_updates ?? [];
-    if (!updates.length) return html`<section class="section"><h3>Firmware durumu</h3>${device.reported_sw_version ? html`<div class="detail-row"><span>HA cihaz kaydındaki yazılım</span><span>${device.reported_sw_version}</span></div>` : nothing}<p>Home Assistant bu cihaz için güncelleme kaynağı sunmuyor; yüklü veya en son firmware sürümü doğrulanamıyor.</p></section>`;
-    return html`<section class="section"><h3>Firmware durumu</h3>${updates.map((update) => {
+    if (!updates.length) return html`<section class="section"><h3>${this.t('firmware_state_title')}</h3>${device.reported_sw_version ? html`<div class="detail-row"><span>${this.t('ha_reported_software')}</span><span>${device.reported_sw_version}</span></div>` : nothing}<p>${this.t('no_ha_update_source_detail')}</p></section>`;
+    return html`<section class="section"><h3>${this.t('firmware_section_heading')}</h3>${updates.map((update) => {
       const status = this.firmwareState(update); const href = this.safeReleaseUrl(update.release_url);
-      return html`<article class="firmware-item"><strong>${update.title || 'Firmware güncellemesi'}</strong><small>${update.entity_id}</small><span class="signal-pill ${status.className}">${status.label}</span><div class="versions">${update.installed_version ? `Yüklü: ${update.installed_version}` : 'Yüklü sürüm bilinmiyor'}${update.latest_version ? ` · En son: ${update.latest_version}` : ''}${update.skipped_version ? ` · Atlanan: ${update.skipped_version}` : ''}</div>${update.release_summary ? html`<p>${update.release_summary}</p>` : nothing}${href ? html`<a href=${href} target="_blank" rel="noopener noreferrer">Sürüm notlarını aç</a>` : nothing}</article>`;
+      return html`<article class="firmware-item"><strong>${update.title || this.t('firmware_update_title')}</strong><small>${update.entity_id}</small><span class="signal-pill ${status.className}">${status.label}</span><div class="versions">${update.installed_version ? `${this.t('installed_version_prefix')}${update.installed_version}` : this.t('installed_version_unknown')}${update.latest_version ? `${this.t('latest_version_prefix')}${update.latest_version}` : ''}${update.skipped_version ? `${this.t('skipped_version_prefix')}${update.skipped_version}` : ''}</div>${update.release_summary ? html`<p>${update.release_summary}</p>` : nothing}${href ? html`<a href=${href} target="_blank" rel="noopener noreferrer">${this.t('open_version_notes')}</a>` : nothing}</article>`;
     })}</section>`;
   }
   private renderDrawer(device: Device) {
-    return html`<div class="drawer-backdrop" @click=${() => this.selectedId = undefined}></div><aside class="drawer" aria-label=${`${device.name} ayrıntıları`}><div class="drawer-head"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><div><h2>${device.name}</h2>${device.model ? html`<div class="sub">${device.model}</div>` : nothing}<div class="sub">${this.devicePlatformLine(device)}</div></div><button class="button ghost close" aria-label="Kapat" @click=${() => this.selectedId = undefined}>${icon('close')}</button></div>
+    return html`<div class="drawer-backdrop" @click=${() => this.selectedId = undefined}></div><aside class="drawer" aria-label=${`${device.name} ${this.t('details')}`}><div class="drawer-head"><span class="device-glyph type-${this.deviceType(device)}">${this.deviceIcon(device)}</span><div><h2>${device.name}</h2>${device.model ? html`<div class="sub">${device.model}</div>` : nothing}<div class="sub">${this.devicePlatformLine(device)}</div></div><button class="button ghost close" aria-label="${this.t('close')}" @click=${() => this.selectedId = undefined}>${icon('close')}</button></div>
       ${this.renderSettingsGate()}
-      <section class="section"><h3>Sağlık</h3><div class="detail-row"><span>Durum</span><strong>${this.healthText(device)}</strong></div>${device.health_reason ? html`<div class="detail-row"><span>Açıklama</span><span>${healthReasonText(device.health_reason)}</span></div>` : nothing}<div class="detail-row"><span>Oda</span><span>${this.areaName(device)}</span></div><div class="detail-row"><span>Etiketler</span><span>${device.labels.length ? device.labels.join(', ') : '—'}</span></div>
-      ${device.device_type === 'remote' ? html`<div class="detail-row"><span>Anlık bağlantı</span><span>${device.signals.connectivity ? 'Bağlantı sensörü mevcut' : 'Anlık bağlantı bilgisi yok'}</span></div>${device.activity?.event_type || device.activity?.last_event_at ? html`<div class="detail-row"><span>Son basış / etkinlik</span><span>${device.activity.last_event_at ? this.formatDate(device.activity.last_event_at) : 'Zaman bilgisi yok'}${device.activity.event_type ? ` · ${humanize(device.activity.event_type)}` : ''}</span></div>` : nothing}` : nothing}
-      ${device.signals.motion ? html`<div class="detail-row"><span>Hareket</span>${this.renderMotion(device)}</div>` : nothing}${device.signals.occupancy && device.signals.occupancy.entity_id !== device.signals.motion?.entity_id ? html`<div class="detail-row"><span>Varlık</span>${this.renderMotion({ ...device, signals: { ...device.signals, motion: null } })}</div>` : nothing}${device.signals.battery ? html`<div class="detail-row"><span>Pil</span>${this.renderBattery(device.signals.battery)}</div>` : nothing}</section>
+      <section class="section"><h3>${this.t('health_2')}</h3><div class="detail-row"><span>${this.t('status')}</span><strong>${this.healthText(device)}</strong></div>${device.health_reason ? html`<div class="detail-row"><span>${this.t('description')}</span><span>${this.healthReasonText(device.health_reason)}</span></div>` : nothing}<div class="detail-row"><span>${this.t('area_2')}</span><span>${this.areaName(device)}</span></div><div class="detail-row"><span>${this.t('labels')}</span><span>${device.labels.length ? device.labels.join(', ') : '—'}</span></div>
+      ${device.device_type === 'remote' ? html`<div class="detail-row"><span>${this.t('remote_live_status_label')}</span><span>${device.signals.connectivity ? this.t('connectivity_label') : this.t('live_connectivity_unavailable')}</span></div>${device.activity?.event_type || device.activity?.last_event_at ? html`<div class="detail-row"><span>${this.t('last_press_activity')}</span><span>${device.activity.last_event_at ? this.formatDate(device.activity.last_event_at) : this.t('timestamp_unavailable')}${device.activity.event_type ? ` · ${this.humanize(device.activity.event_type)}` : ''}</span></div>` : nothing}` : nothing}
+      ${device.signals.motion ? html`<div class="detail-row"><span>${this.t('motion')}</span>${this.renderMotion(device)}</div>` : nothing}${device.signals.occupancy && device.signals.occupancy.entity_id !== device.signals.motion?.entity_id ? html`<div class="detail-row"><span>${this.t('presence')}</span>${this.renderMotion({ ...device, signals: { ...device.signals, motion: null } })}</div>` : nothing}${device.signals.battery ? html`<div class="detail-row"><span>${this.t('battery')}</span>${this.renderBattery(device.signals.battery)}</div>` : nothing}</section>
       ${this.data?.is_admin && this.data.capabilities.settings ? this.renderDeviceSettings(device) : nothing}
       ${this.renderFirmwareDetails(device)}
-      <section class="section"><h3>Varlıklar (${device.entities.length})</h3>${device.entities.map((entity) => html`<div class="entity-row"><div class="entity-title"><strong>${entity.name}</strong><small>${entity.entity_id}${entity.disabled ? ' · devre dışı' : ''}</small></div><span class="sub">${entity.state}</span></div>`)}</section></aside>`;
+      <section class="section"><h3>${this.t('entities')} (${device.entities.length})</h3>${device.entities.map((entity) => html`<div class="entity-row"><div class="entity-title"><strong>${entity.name}</strong><small>${entity.entity_id}${entity.disabled ? this.t('entity_disabled_suffix') : ''}</small></div><span class="sub">${entity.state}</span></div>`)}</section></aside>`;
   }
   private renderEditor(devices: Device[]) {
     const p = this.data!.preferences;
-    return html`<section class="settings-panel"><h2>Görünüm ve kapsam</h2><div class="settings-grid"><label class="field">Cihaz kapsamı<select .value=${p.scope} @change=${(e: Event) => this.changeScope((e.target as HTMLSelectElement).value as Preferences['scope'])}><option value="all">Tüm cihazlar</option><option value="area">Oda</option><option value="floor">Kat</option><option value="label">Etiket</option><option value="integration">Entegrasyon</option><option value="manual">Elle seç</option></select></label>${this.renderScopeValue(p)}<label class="field">Gruplama<select .value=${p.group_by} @change=${(e: Event) => this.editPreference('group_by', (e.target as HTMLSelectElement).value as Preferences['group_by'])}><option value="area">Odaya göre</option><option value="floor">Kata göre</option><option value="integration">Entegrasyona göre</option><option value="none">Gruplama yok</option></select></label><label class="field">Sıralama<select .value=${p.sort} @change=${(e: Event) => this.editPreference('sort', (e.target as HTMLSelectElement).value as Preferences['sort'])}><option value="name">Ada göre</option><option value="health">Sağlığa göre</option><option value="area">Odaya göre</option></select></label><label class="field">Başlangıç görünümü<select .value=${p.layout} @change=${(e: Event) => this.editPreference('layout', (e.target as HTMLSelectElement).value as Preferences['layout'])}><option value="inventory">Kompakt envanter</option><option value="rooms">Oda kartları</option></select></label></div>
-      <label class="checkline"><input type="checkbox" .checked=${p.auto_include_new} ?disabled=${p.scope !== 'manual'} @change=${(e: Event) => this.editPreference('auto_include_new', (e.target as HTMLInputElement).checked)}> Yeni bulunan cihazları otomatik dahil et (elle seçilen kapsamda)</label>
-      <div class="settings-grid"><label class="field">Geçmiş saklama süresi (gün)<input type="number" min="1" max="365" step="1" .value=${String(p.retention_days)} @change=${(e: Event) => this.editPreference('retention_days', Math.max(1, Math.min(365, Number((e.target as HTMLInputElement).value))))}></label><label class="checkline"><input type="checkbox" .checked=${p.weekly_report_enabled} @change=${(e: Event) => this.editPreference('weekly_report_enabled', (e.target as HTMLInputElement).checked)}> Haftalık rapor bildirimi (Pazartesi 09.00)</label></div>
-      <div class="subhead">Tabloda gösterilen sütunlar</div><div class="settings-grid">${[['area','Oda'],['motion','Durum'],['battery','Pil'],['connectivity','Bağlantı'],['firmware','Firmware']].map(([key,label]) => html`<label class="checkline"><input type="checkbox" .checked=${p.visible_columns.includes(key)} @change=${(e: Event) => { const checked = (e.target as HTMLInputElement).checked; this.editPreference('visible_columns', checked ? [...p.visible_columns,key] : p.visible_columns.filter((x) => x !== key)); }}>${label}</label>`)}</div>
-      <div class="subhead">Cihaz istisnaları ve elle seçilen cihazlar <span class="sub">(hariç tutulanlar kapsam kuralının önceliğindedir)</span></div><div class="settings-devices">${devices.map((device) => { const excluded = p.excluded_device_ids.includes(device.id); const isIncluded = p.included_device_ids === null ? !excluded : p.included_device_ids.includes(device.id); return html`<label class="settings-device"><input type="checkbox" .checked=${p.scope === 'manual' ? isIncluded : !excluded} @change=${(e: Event) => { const checked = (e.target as HTMLInputElement).checked; if (p.scope === 'manual') { const list = new Set(p.included_device_ids ?? this.data!.all_devices.map((d) => d.id)); const excludedIds = new Set(p.excluded_device_ids); if (checked) { list.add(device.id); excludedIds.delete(device.id); } else list.delete(device.id); this.editPreference('included_device_ids', [...list]); this.editPreference('excluded_device_ids', [...excludedIds]); } else { const list = new Set(p.excluded_device_ids); checked ? list.delete(device.id) : list.add(device.id); this.editPreference('excluded_device_ids', [...list]); } }}><span>${device.name}</span><small>${this.groupName(device)}</small></label>`; })}</div>
-      <div class="subhead">Algılayıcı kaynakları</div><div class="sources">${devices.flatMap((device) => (['motion','occupancy','battery','connectivity'] as const).map((role) => {
+    return html`<section class="settings-panel"><h2>${this.t('view_and_scope')}</h2><div class="settings-grid"><label class="field">${this.t('device_scope')}<select .value=${p.scope} @change=${(e: Event) => this.changeScope((e.target as HTMLSelectElement).value as Preferences['scope'])}><option value="all">${this.t('all_devices')}</option><option value="area">${this.t('area_2')}</option><option value="floor">${this.t('floor')}</option><option value="label">${this.t('label')}</option><option value="integration">${this.t('integration')}</option><option value="manual">${this.t('select_manually')}</option></select></label>${this.renderScopeValue(p)}<label class="field">${this.t('group_by')}<select .value=${p.group_by} @change=${(e: Event) => this.editPreference('group_by', (e.target as HTMLSelectElement).value as Preferences['group_by'])}><option value="area">${this.t('area')}</option><option value="floor">${this.t('group_by_floor')}</option><option value="integration">${this.t('integration_2')}</option><option value="none">${this.t('no_grouping')}</option></select></label><label class="field">${this.t('sort_by')}<select .value=${p.sort} @change=${(e: Event) => this.editPreference('sort', (e.target as HTMLSelectElement).value as Preferences['sort'])}><option value="name">${this.t('name')}</option><option value="health">${this.t('health_3')}</option><option value="area">${this.t('area')}</option></select></label><label class="field">${this.t('default_layout')}<select .value=${p.layout} @change=${(e: Event) => this.editPreference('layout', (e.target as HTMLSelectElement).value as Preferences['layout'])}><option value="inventory">${this.t('compact_inventory')}</option><option value="rooms">${this.t('room_cards')}</option></select></label></div>
+      <label class="checkline"><input type="checkbox" .checked=${p.auto_include_new} ?disabled=${p.scope !== 'manual'} @change=${(e: Event) => this.editPreference('auto_include_new', (e.target as HTMLInputElement).checked)}> ${this.t('automatically_include_new_devices_manual')}</label>
+      <div class="settings-grid"><label class="field">${this.t('history_retention_days')}<input type="number" min="1" max="365" step="1" .value=${String(p.retention_days)} @change=${(e: Event) => this.editPreference('retention_days', Math.max(1, Math.min(365, Number((e.target as HTMLInputElement).value))))}></label><label class="checkline"><input type="checkbox" .checked=${p.weekly_report_enabled} @change=${(e: Event) => this.editPreference('weekly_report_enabled', (e.target as HTMLInputElement).checked)}> ${this.t('weekly_report_notification_monday_9_00_a')}</label></div>
+      <div class="subhead">${this.t('visible_table_columns')}</div><div class="settings-grid">${[['area','area_2'],['motion','status'],['battery','battery'],['connectivity','connectivity'],['firmware','firmware']].map(([key,label]) => html`<label class="checkline"><input type="checkbox" .checked=${p.visible_columns.includes(key)} @change=${(e: Event) => { const checked = (e.target as HTMLInputElement).checked; this.editPreference('visible_columns', checked ? [...p.visible_columns,key] : p.visible_columns.filter((x) => x !== key)); }}>${this.t(label as LocaleKey)}</label>`)}</div>
+      <div class="subhead">${this.t('device_exclusions_and_manual_selection')} <span class="sub">${this.t('additional_scope_note')}</span></div><div class="settings-devices">${devices.map((device) => { const excluded = p.excluded_device_ids.includes(device.id); const isIncluded = p.included_device_ids === null ? !excluded : p.included_device_ids.includes(device.id); return html`<label class="settings-device"><input type="checkbox" .checked=${p.scope === 'manual' ? isIncluded : !excluded} @change=${(e: Event) => { const checked = (e.target as HTMLInputElement).checked; if (p.scope === 'manual') { const list = new Set(p.included_device_ids ?? this.data!.all_devices.map((d) => d.id)); const excludedIds = new Set(p.excluded_device_ids); if (checked) { list.add(device.id); excludedIds.delete(device.id); } else list.delete(device.id); this.editPreference('included_device_ids', [...list]); this.editPreference('excluded_device_ids', [...excludedIds]); } else { const list = new Set(p.excluded_device_ids); checked ? list.delete(device.id) : list.add(device.id); this.editPreference('excluded_device_ids', [...list]); } }}><span>${device.name}</span><small>${this.groupName(device)}</small></label>`; })}</div>
+      <div class="subhead">${this.t('signal_sources')}</div><div class="sources">${devices.flatMap((device) => (['motion','occupancy','battery','connectivity'] as const).map((role) => {
         const current = p.source_overrides[device.id]?.[role] ?? '';
         const candidates = device.entities.filter((entity) => !entity.disabled && (role === 'motion' ? entity.domain === 'binary_sensor' && entity.device_class === 'motion' : role === 'occupancy' ? entity.domain === 'binary_sensor' && ['occupancy','presence'].includes(entity.device_class ?? '') : role === 'battery' ? entity.device_class === 'battery' || (entity.domain === 'sensor' && ['%','v','mv'].includes((entity.unit ?? '').toLocaleLowerCase()) && `${entity.entity_id} ${entity.name}`.toLocaleLowerCase().includes('battery')) : entity.domain === 'binary_sensor' && entity.device_class === 'connectivity'));
-        return candidates.length ? html`<label class="field">${device.name} · ${roleLabel[role]}<select .value=${current} @change=${(e: Event) => { const byId = { ...p.source_overrides, [device.id]: { ...{ motion: null, occupancy: null, battery: null, connectivity: null }, ...p.source_overrides[device.id], [role]: (e.target as HTMLSelectElement).value || null } }; this.editPreference('source_overrides', byId); }}><option value="">Otomatik kaynak</option>${candidates.map((entity) => html`<option value=${entity.entity_id}>${entity.name} (${entity.entity_id})</option>`)}</select></label>` : nothing;
+        return candidates.length ? html`<label class="field">${device.name} · ${this.roleLabel(role)}<select .value=${current} @change=${(e: Event) => { const byId = { ...p.source_overrides, [device.id]: { ...{ motion: null, occupancy: null, battery: null, connectivity: null }, ...p.source_overrides[device.id], [role]: (e.target as HTMLSelectElement).value || null } }; this.editPreference('source_overrides', byId); }}><option value="">${this.t('automatic_source')}</option>${candidates.map((entity) => html`<option value=${entity.entity_id}>${entity.name} (${entity.entity_id})</option>`)}</select></label>` : nothing;
       }))}</div>
-      <div class="subhead">Bilerek kapalı kuralları</div>${p.expected_off_rules.map((rule, index) => html`<div class="rule-row"><input class="plain-input" aria-label="Entity" .value=${rule.entity_id} @change=${(e: Event) => this.updateRule(index,'entity_id',(e.target as HTMLInputElement).value)}><input class="plain-input" aria-label="Beklenen durum" .value=${rule.state} @change=${(e: Event) => this.updateRule(index,'state',(e.target as HTMLInputElement).value)}><button class="button" aria-label="Kuralı sil" @click=${() => this.editPreference('expected_off_rules', p.expected_off_rules.filter((_, i) => i !== index))}>${icon('close')}</button></div>`)}
-      <button class="button" @click=${() => this.editPreference('expected_off_rules', [...p.expected_off_rules,{ id: crypto.randomUUID(), entity_id:'', state:'off' }])}>+ Kural ekle</button>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="button" @click=${() => { this.editing = false; void this.load(); }}>İptal</button><button class="button primary" ?disabled=${this.saving} @click=${() => this.saveEditor()}>${this.saving ? 'Kaydediliyor…' : 'Değişiklikleri kaydet'}</button></div></section>`;
+      <div class="subhead">${this.t('expected_off_rules')}</div>${p.expected_off_rules.map((rule, index) => html`<div class="rule-row"><input class="plain-input" aria-label="${this.t('entity')}" .value=${rule.entity_id} @change=${(e: Event) => this.updateRule(index,'entity_id',(e.target as HTMLInputElement).value)}><input class="plain-input" aria-label="${this.t('expected_state')}" .value=${rule.state} @change=${(e: Event) => this.updateRule(index,'state',(e.target as HTMLInputElement).value)}><button class="button" aria-label="${this.t('delete_rule')}" @click=${() => this.editPreference('expected_off_rules', p.expected_off_rules.filter((_, i) => i !== index))}>${icon('close')}</button></div>`)}
+      <button class="button" @click=${() => this.editPreference('expected_off_rules', [...p.expected_off_rules,{ id: crypto.randomUUID(), entity_id:'', state:'off' }])}>${this.t('add_rule')}</button>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px"><button class="button" @click=${() => { this.editing = false; void this.load(); }}>${this.t('cancel')}</button><button class="button primary" ?disabled=${this.saving} @click=${() => this.saveEditor()}>${this.saving ? this.t('saving') : this.t('save_changes')}</button></div></section>`;
   }
   private changeScope(scope: Preferences['scope']) {
     this.settingsUnlocked = false;
@@ -473,9 +475,9 @@ export class DeviceCarePanel extends LitElement {
     this.editPreference('included_device_ids', scope === 'manual' ? included ?? [] : null);
   }
   private renderScopeValue(p: Preferences) {
-    const choices: NamedItem[] = p.scope === 'area' ? this.data!.areas : p.scope === 'floor' ? this.data!.floors : p.scope === 'label' ? this.data!.labels : p.scope === 'integration' ? [...new Set(this.data!.all_devices.flatMap((d) => d.integrations?.length ? d.integrations : d.integration ? [d.integration] : []))].map((id) => ({ id, name: humanize(id) })) : [];
+    const choices: NamedItem[] = p.scope === 'area' ? this.data!.areas : p.scope === 'floor' ? this.data!.floors : p.scope === 'label' ? this.data!.labels : p.scope === 'integration' ? [...new Set(this.data!.all_devices.flatMap((d) => d.integrations?.length ? d.integrations : d.integration ? [d.integration] : []))].map((id) => ({ id, name: this.humanize(id) })) : [];
     if (!['area','floor','label','integration'].includes(p.scope)) return nothing;
-    return html`<label class="field">${({ area:'Oda',floor:'Kat',label:'Etiket',integration:'Entegrasyon' } as Record<string,string>)[p.scope]}<select .value=${p.scope_value ?? ''} @change=${(e: Event) => this.editPreference('scope_value', (e.target as HTMLSelectElement).value || null)}><option value="">Seçiniz</option>${choices.map((choice) => html`<option value=${choice.id}>${choice.name}</option>`)}</select></label>`;
+    return html`<label class="field">${this.t(({ area:'area_2',floor:'floor',label:'label',integration:'integration' } as Record<string,LocaleKey>)[p.scope])}<select .value=${p.scope_value ?? ''} @change=${(e: Event) => this.editPreference('scope_value', (e.target as HTMLSelectElement).value || null)}><option value="">${this.t('select')}</option>${choices.map((choice) => html`<option value=${choice.id}>${choice.name}</option>`)}</select></label>`;
   }
   private updateRule(index: number, key: 'entity_id'|'state', value: string) {
     const rules = [...this.data!.preferences.expected_off_rules]; rules[index] = { ...rules[index], [key]: value }; this.editPreference('expected_off_rules', rules);
@@ -484,32 +486,32 @@ export class DeviceCarePanel extends LitElement {
     if (!device) return nothing;
     const eligible = device.entities.filter((entity) => !entity.disabled && ['number','select','switch'].includes(entity.domain) && entity.entity_category === 'config');
     if (!eligible.length) return nothing;
-    return html`<section class="settings-panel ${this.settingsUnlocked ? '' : 'read-only'}"><h2>Desteklenen ayarlar</h2>${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}<p class="sub">Kilitliyken değerler yalnızca görüntülenir. Değişiklik için yukarıdaki onay kutusunu açın.</p>${eligible.map((entity) => html`<div class="entity-row"><div class="entity-title"><strong>${entity.name}</strong><small>${entity.entity_id}${entity.entity_category ? ` · ${entity.entity_category}` : ''}</small></div>${entity.domain === 'switch' ? html`<button class="button" ?disabled=${!this.canChangeSettings(entity)} @click=${() => this.toggleSwitch(entity)}>${this.stateUnavailable(entity) ? (entity.state === 'unavailable' ? 'Erişilemiyor' : 'Durum bilinmiyor') : entity.state === 'on' ? 'Açık' : entity.state === 'off' ? 'Kapalı' : entity.state}</button>` : entity.domain === 'select' ? this.renderSelect(entity) : this.renderNumber(entity)}</div>`)}</section>`;
+    return html`<section class="settings-panel ${this.settingsUnlocked ? '' : 'read-only'}"><h2>${this.t('supported_settings')}</h2>${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}<p class="sub">${this.t('expected_off_hint')}</p>${eligible.map((entity) => html`<div class="entity-row"><div class="entity-title"><strong>${entity.name}</strong><small>${entity.entity_id}${entity.entity_category ? ` · ${entity.entity_category}` : ''}</small></div>${entity.domain === 'switch' ? html`<button class="button" ?disabled=${!this.canChangeSettings(entity)} @click=${() => this.toggleSwitch(entity)}>${this.stateUnavailable(entity) ? (entity.state === 'unavailable' ? this.t('state_unavailable') : this.t('state_unknown')) : entity.state === 'on' ? this.t('state_on') : entity.state === 'off' ? this.t('state_off') : entity.state}</button>` : entity.domain === 'select' ? this.renderSelect(entity) : this.renderNumber(entity)}</div>`)}</section>`;
   }
   private stateUnavailable(entity: DeviceEntity) { return ['unknown','unavailable'].includes(entity.state); }
   private renderSelect(entity: DeviceEntity) {
     const options = Array.isArray(entity.attributes.options) ? entity.attributes.options as string[] : [];
-    return html`<select class="select" aria-label=${entity.name} ?disabled=${!this.canChangeSettings(entity)} .value=${this.stateUnavailable(entity) ? '' : entity.state} @change=${(e: Event) => void this.changeSetting(entity,(e.target as HTMLSelectElement).value)}>${this.stateUnavailable(entity) ? html`<option value="">${entity.state === 'unavailable' ? 'Erişilemiyor' : 'Durum bilinmiyor'}</option>` : !options.includes(entity.state) ? html`<option value=${entity.state}>${entity.state} · geçerli seçenek yok</option>` : nothing}${options.map((x) => html`<option value=${x}>${x}</option>`)}</select>`;
+    return html`<select class="select" aria-label=${entity.name} ?disabled=${!this.canChangeSettings(entity)} .value=${this.stateUnavailable(entity) ? '' : entity.state} @change=${(e: Event) => void this.changeSetting(entity,(e.target as HTMLSelectElement).value)}>${this.stateUnavailable(entity) ? html`<option value="">${entity.state === 'unavailable' ? this.t('state_unavailable') : this.t('state_unknown')}</option>` : !options.includes(entity.state) ? html`<option value=${entity.state}>${entity.state}${this.t('option_not_valid')}</option>` : nothing}${options.map((x) => html`<option value=${x}>${x}</option>`)}</select>`;
   }
   private renderNumber(entity: DeviceEntity) {
     const attrs = entity.attributes; const min = Number(attrs.min ?? 0); const max = Number(attrs.max ?? 100); const step = Number(attrs.step ?? 1);
-    return html`<input class="plain-input" type="number" aria-label=${entity.name} .value=${this.stateUnavailable(entity) ? '' : entity.state} placeholder=${this.stateUnavailable(entity) ? (entity.state === 'unavailable' ? 'Erişilemiyor' : 'Durum bilinmiyor') : ''} min=${min} max=${max} step=${step} ?disabled=${!this.canChangeSettings(entity)} @change=${(e: Event) => void this.changeSetting(entity,Number((e.target as HTMLInputElement).value))}>`;
+    return html`<input class="plain-input" type="number" aria-label=${entity.name} .value=${this.stateUnavailable(entity) ? '' : entity.state} placeholder=${this.stateUnavailable(entity) ? (entity.state === 'unavailable' ? this.t('state_unavailable') : this.t('state_unknown')) : ''} min=${min} max=${max} step=${step} ?disabled=${!this.canChangeSettings(entity)} @change=${(e: Event) => void this.changeSetting(entity,Number((e.target as HTMLInputElement).value))}>`;
   }
   private renderReport() {
     const r = this.report!; const s = r.stats;
-    return html`<section class="report-panel"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h2 style="margin:0">Bakım raporu</h2><select class="select" .value=${this.reportWindow} @change=${(e: Event) => { this.reportWindow = (e.target as HTMLSelectElement).value as '24h'|'7d'; void this.showReport(); }}><option value="24h">Son 24 saat</option><option value="7d">Son 7 gün</option></select><button class="button primary" style="margin-left:auto" @click=${() => this.showReport(true)}>Rapor oluştur</button></div>
-      <div class="report-stats"><div class="stat"><strong>${this.formatDuration(s.device_outage_seconds)}</strong><span>Cihaz-kesinti toplamı</span></div><div class="stat"><strong>${s.outage_starts}</strong><span>Kesinti başlangıcı</span></div><div class="stat"><strong>${s.outage_intervals}</strong><span>Kesinti aralığı</span></div><div class="stat"><strong>${s.low_battery}</strong><span>Düşük pil</span></div><div class="stat"><strong>${s.missing_data}</strong><span>Eksik veri</span></div></div>
-      ${r.ongoing.length ? html`<div class="subhead">Devam eden kesintiler</div>${r.ongoing.map((event) => html`<div class="report-event"><strong>${this.deviceName(event.device_id)}</strong><span>Başlangıç ${this.formatDate(event.start)}</span><span>${this.formatDuration(event.seconds)} · sürüyor</span></div>`)}` : nothing}
+    return html`<section class="report-panel"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h2 style="margin:0">${this.t('maintenance_report')}</h2><select class="select" .value=${this.reportWindow} @change=${(e: Event) => { this.reportWindow = (e.target as HTMLSelectElement).value as '24h'|'7d'; void this.showReport(); }}><option value="24h">${this.t('last_24_hours')}</option><option value="7d">${this.t('last_7_days')}</option></select><button class="button primary" style="margin-left:auto" @click=${() => this.showReport(true)}>${this.t('generate_report')}</button></div>
+      <div class="report-stats"><div class="stat"><strong>${this.formatDuration(s.device_outage_seconds)}</strong><span>${this.t('device_outage_total')}</span></div><div class="stat"><strong>${s.outage_starts}</strong><span>${this.t('outage_starts')}</span></div><div class="stat"><strong>${s.outage_intervals}</strong><span>${this.t('outage_intervals')}</span></div><div class="stat"><strong>${s.low_battery}</strong><span>${this.t('low_battery_3')}</span></div><div class="stat"><strong>${s.missing_data}</strong><span>${this.t('missing_data')}</span></div></div>
+      ${r.ongoing.length ? html`<div class="subhead">${this.t('ongoing_outages')}</div>${r.ongoing.map((event) => html`<div class="report-event"><strong>${this.deviceName(event.device_id)}</strong><span>${this.t('started')} ${this.formatDate(event.start)}</span><span>${this.formatDuration(event.seconds)} · ${this.t('ongoing')}</span></div>`)}` : nothing}
       <div class="report-events">${r.events.filter((event) => !event.ongoing).slice(0,8).map((event) => html`<div class="report-event"><strong>${this.deviceName(event.device_id)}</strong><span>${this.formatDate(event.start)}</span><span>${this.formatDuration(event.seconds)}</span></div>`)}</div>
-      <p class="coverage">${r.coverage_since ? `Veri kapsamı ${this.formatDate(r.coverage_since)} tarihinden itibaren.` : 'Veri kapsamı başlangıcı bilinmiyor.'} Cihaz kesinti süreleri cihaz bazında toplanır; evin çevrimdışı süresi değildir.</p></section>`;
+      <p class="coverage">${r.coverage_since ? `${this.t('coverage_since_prefix')}${this.formatDate(r.coverage_since)}${this.t('coverage_since_suffix')}` : this.t('coverage_start_unknown')}${this.t('per_device_outage_note')}</p></section>`;
   }
   private deviceName(id: string) { return this.data?.devices.find((device) => device.id === id)?.name ?? id; }
   private devicePlatformLine(device: Device) {
     const platforms = device.integrations?.length ? device.integrations : [device.integration].filter((value): value is string => Boolean(value));
-    return [device.manufacturer, platforms.map(humanize).join(', ')].filter(Boolean).join(' · ') || 'Üretici / entegrasyon bilgisi yok';
+    return [device.manufacturer, platforms.map((value) => this.humanize(value)).join(', ')].filter(Boolean).join(' · ') || this.t('manufacturer_integration_unavailable');
   }
-  private formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(this.hass?.language || 'tr', { dateStyle:'short', timeStyle:'short' }).format(date); }
-  private formatDuration(seconds: number) { const minutes = Math.round(seconds / 60); if (minutes < 60) return `${minutes} dk`; const hours = Math.floor(minutes / 60); const remaining = minutes % 60; return remaining ? `${hours} sa ${remaining} dk` : `${hours} sa`; }
+  private formatDate(value: string) { return formatLocalDate(value, this.uiLanguage, this.hass?.config?.time_zone); }
+  private formatDuration(seconds: number) { return formatLocalDuration(seconds, this.uiLanguage); }
 }
 
 declare global { interface HTMLElementTagNameMap { 'device-care-panel': DeviceCarePanel } }

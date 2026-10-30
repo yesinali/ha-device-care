@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 DOMAIN = "device_care"
-VERSION = "0.1.0-beta.4"
+VERSION = "0.1.0-beta.5"
 PLATFORMS: list[str] = []
 PANEL_URL = "device-care"
-PANEL_TITLE = "Cihazlar & Bakım"
+PANEL_TITLE = "Device Care"
 PANEL_ICON = "mdi:heart-pulse"
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.storage"

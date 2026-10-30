@@ -1,6 +1,12 @@
 # Changelog
 
-All notable changes to this project will be documented here. The project has not published a release yet.
+All notable changes to this project will be documented here.
+
+## 0.1.0-beta.5
+
+- Localize setup and options flows in Home Assistant's English (US) and Turkish locales, including device-scope selector choices.
+- Use the globally neutral `Device Care` sidebar and entry title; the panel registration API provides one shared title per Home Assistant instance.
+- Localize the weekly persistent notification using the Home Assistant instance language (English US by default, Turkish when configured as Turkish).
 
 ## 0.1.0-beta.4
 

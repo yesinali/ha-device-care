@@ -2,35 +2,45 @@
   "config": {
     "step": {
       "user": {
-        "title": "Cihazlar & Bakım",
-        "description": "Home Assistant kayıt defterindeki cihazları seçin.",
+        "title": "Device Care",
+        "description": "Choose which devices from Home Assistant's registry to include.",
         "data": {
-          "scope": "Cihaz kapsamı",
-          "auto_include_new": "Yeni cihazları otomatik dahil et"
+          "scope": "Device scope",
+          "auto_include_new": "Automatically include new devices"
         }
       },
       "selection": {
-        "title": "Cihaz kapsamını seçin",
+        "title": "Choose devices",
         "data": {
-          "scope_value": "Kapsam değeri",
-          "included_device_ids": "Cihazlar"
+          "scope_value": "Scope value",
+          "included_device_ids": "Devices"
         }
       },
       "confirm": {
-        "title": "Seçimi onaylayın",
-        "description": "Seçiminiz {count} cihaz içeriyor.",
-        "data": {"confirm": "Kurulumu tamamla"}
+        "title": "Confirm selection",
+        "description": "Your selection includes {count} devices.",
+        "data": {"confirm": "Finish setup"}
       }
     },
-    "abort": {"no_scope_choices": "Bu kapsamda seçilebilir değer bulunamadı."}
+    "abort": {"no_scope_choices": "There are no values to choose for this scope."}
+  },
+  "selector": {
+    "device_scope": {
+      "options": {
+        "all": "All eligible devices",
+        "area": "Area",
+        "floor": "Floor",
+        "label": "Label",
+        "integration": "Integration",
+        "manual": "Choose devices manually"
+      }
+    }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Cihazlar & Bakım seçenekleri",
-        "data": {
-          "retention_days": "Olay saklama süresi (gün)"
-        }
+        "title": "Device Care options",
+        "data": {"retention_days": "Event retention (days)"}
       }
     }
   }

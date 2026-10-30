@@ -40,4 +40,4 @@ export interface HaConnection {
   sendMessagePromise<T = unknown>(message: Record<string, unknown>): Promise<T>;
   subscribeMessage<T>(callback: (message: T) => void, message: Record<string, unknown>): Promise<() => void>;
 }
-export interface HomeAssistant { connection: HaConnection; language?: string; themes?: { darkMode?: boolean }; user?: { is_admin?: boolean } }
+export interface HomeAssistant { connection: HaConnection; language?: string; locale?: { language?: string }; config?: { time_zone?: string }; themes?: { darkMode?: boolean }; user?: { is_admin?: boolean } }

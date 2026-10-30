@@ -9,6 +9,27 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
+def _weekly_report_notification(stats: dict, coverage_since: str | None, language: str | None) -> tuple[str, str]:
+    """Build the instance-wide weekly notification in HA's configured language."""
+    if (language or "").lower().startswith("tr"):
+        title = "Device Care — haftalık rapor"
+        message = (
+            f"Son 7 gün: {stats['outage_starts']} kesinti başlangıcı, "
+            f"{stats['device_outage_seconds'] // 60} cihaz-dakika doğrulanmış kesinti, "
+            f"{stats['low_battery']} düşük pil. İzleme başlangıcı: "
+            f"{coverage_since or 'bilinmiyor'}."
+        )
+        return title, message
+    title = "Device Care — weekly report"
+    message = (
+        f"Last 7 days: {stats['outage_starts']} outage starts, "
+        f"{stats['device_outage_seconds'] // 60} device-minutes of confirmed downtime, "
+        f"{stats['low_battery']} low batteries. Monitoring started: "
+        f"{coverage_since or 'unknown'}."
+    )
+    return title, message
+
+
 async def async_setup(hass, config) -> bool:
     """Register domain-level websocket handlers."""
     from .websocket_api import async_register as async_register_websocket
@@ -106,14 +127,9 @@ async def async_setup_entry(hass, entry) -> bool:
         report["stats"]["low_battery"] = sum(1 for d in inventory["devices"] if is_low_battery(d["signals"]["battery"]))
         report["stats"]["missing_data"] = sum(1 for d in inventory["devices"] if d["health"] == "unknown")
         stats = report["stats"]
-        message = (
-            f"Son 7 gün: {stats['outage_starts']} kesinti başlangıcı, "
-            f"{stats['device_outage_seconds'] // 60} cihaz-dakika doğrulanmış kesinti, "
-            f"{stats['low_battery']} düşük pil. İzleme başlangıcı: "
-            f"{report['coverage_since'] or 'bilinmiyor'}."
-        )
+        title, message = _weekly_report_notification(stats, report["coverage_since"], hass.config.language)
         await hass.services.async_call("persistent_notification", "create", {
-            "title": "Cihazlar & Bakım — haftalık rapor",
+            "title": title,
             "message": message,
             "notification_id": f"device_care_weekly_report_{week_key.replace('-', '_')}",
         }, blocking=True)

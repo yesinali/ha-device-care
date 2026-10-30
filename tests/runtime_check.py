@@ -64,6 +64,14 @@ async def main() -> None:
             "device_care", context={"source": "user"}
         )
         assert flow["step_id"] == "user"
+        scope_selector = next(
+            value for key, value in flow["data_schema"].schema.items()
+            if str(key) == "scope"
+        )
+        assert scope_selector.config.get("translation_key") == "device_scope"
+        assert set(scope_selector.config["options"]) == {
+            "all", "area", "floor", "label", "integration", "manual"
+        }
         flow = await hass.config_entries.flow.async_configure(
             flow["flow_id"], {"scope": "all", "auto_include_new": True}
         )

@@ -2,13 +2,19 @@
   "config": {
     "step": {
       "user": {
-        "title": "Devices & Care",
-        "description": "Select devices from Home Assistant's registry.",
-        "data": {"scope": "Device scope", "auto_include_new": "Automatically include new devices"}
+        "title": "Device Care",
+        "description": "Choose which devices from Home Assistant's registry to include.",
+        "data": {
+          "scope": "Device scope",
+          "auto_include_new": "Automatically include new devices"
+        }
       },
       "selection": {
-        "title": "Choose device scope",
-        "data": {"scope_value": "Scope value", "included_device_ids": "Devices"}
+        "title": "Choose devices",
+        "data": {
+          "scope_value": "Scope value",
+          "included_device_ids": "Devices"
+        }
       },
       "confirm": {
         "title": "Confirm selection",
@@ -18,10 +24,22 @@
     },
     "abort": {"no_scope_choices": "There are no values to choose for this scope."}
   },
+  "selector": {
+    "device_scope": {
+      "options": {
+        "all": "All eligible devices",
+        "area": "Area",
+        "floor": "Floor",
+        "label": "Label",
+        "integration": "Integration",
+        "manual": "Choose devices manually"
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
-        "title": "Devices & Care options",
+        "title": "Device Care options",
         "data": {"retention_days": "Event retention (days)"}
       }
     }

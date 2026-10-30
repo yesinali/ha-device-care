@@ -1,73 +1,58 @@
-# Cihazlar & Bakım
+# Device Care
 
-Home Assistant için cihaz envanteri ve bakım görünümü sunan özel entegrasyon. Entegrasyon Home Assistant'a zaten kayıtlı cihazları kullanır; ağ taraması veya yeni cihaz eşleştirmesi yapmaz.
+Device Care is a Home Assistant custom integration for keeping an at-a-glance inventory of selected devices and reviewing the health information Home Assistant already has for them. It uses Home Assistant's device and entity registry; it does not scan your network, pair devices, or replace the integrations that connect them.
 
-> **Geliştirme önizlemesi:** Yayımlanmış son sürüm `0.1.0-beta.3`; geliştirme dalı `0.1.0-beta.4` adayıdır. Gerçek bir Home Assistant kurulumunda veya fiziksel cihazlarda doğrulanmış kararlı ürün değildir. CI hedefi Home Assistant Core 2026.10.4'tür; bu, minimum destek sürümü bildirimi değildir.
+![Device Care brand icon](custom_components/device_care/brand/icon.png)
 
-## Özellikler
+> **Beta preview:** version `0.1.0-beta.5` is being prepared and has not been published as a GitHub release. The latest published version may be older. Beta software is still being tested; back up your Home Assistant configuration before trying it.
 
-- Cihazları Home Assistant kayıtlarından keşfeder ve seçilen kapsamda listeler.
-- Kompakt envanter ve oda gruplu kart düzenleri sunar.
-- Hareket/varlık sensörü durumlarını metin ve ikonla gösterir; bilinmeyen ve erişilemeyen durumları ayrı tutar.
-- Home Assistant'ın sağladığı firmware durumunu salt okunur gösterir. Envanterde firmware sütunu varsayılan olarak kapalıdır; **Düzenle → Tabloda gösterilen sütunlar** bölümünden açılabilir.
-- Home Assistant'ın sağladığı cihaz/entity bilgilerini kullanır. Zigbee2MQTT, Matter veya başka bir entegrasyonun yerine geçmez.
+For the Turkish user guide, see [README.tr.md](README.tr.md). Contributors and maintainers can use [DEVELOPMENT.md](DEVELOPMENT.md).
 
-Özelliklerin ve kabul koşullarının durumu [CHANGELOG.md](CHANGELOG.md) dosyasında tutulur. Gerçek cihaz, farklı ekran boyutları ve Home Assistant sürümleri üzerinde doğrulama yapılmadan bu özellikler kurulumunuz için garanti edilmez.
+## What it does
 
-## Kurulum
+- Shows a searchable device inventory, with a compact list and room-grouped view.
+- Lets you choose which devices to follow by area, floor, label, integration, or manual selection. You can opt to include new devices that later match the selected scope.
+- Shows battery, sensor, activity, and health details when those facts are exposed by Home Assistant and the device's integration.
+- Can show firmware versions and update status reported by Home Assistant. Firmware information is read-only in Device Care; it does not install updates.
+- Keeps an event history from the time monitoring starts. It does not invent older history or an uptime percentage for periods Home Assistant was unavailable.
+- Follows the Home Assistant language setting. English (United States) and Turkish are supported. Dates use the Home Assistant time zone.
 
-> HACS kurulum adımları yayımlanmış beta.3 sürümü için geçerlidir. Beta.4 adayı henüz yayımlanmış bir GitHub Release değildir; sürüm numarası tek başına kurulum paketi yayımlandığı anlamına gelmez.
+Device Care cannot establish instantaneous reachability for every device. A recent event or battery reading does not prove that a device is currently online. Some integrations do not provide battery, connectivity, activity, or firmware data, so those details may be unavailable.
 
-1. HACS → **Entegrasyonlar** → sağ üst menü → **Özel depolar** bölümünü açın.
-2. Bu deponun GitHub URL'sini ekleyin ve kategori olarak **Integration** seçin.
-3. HACS'te **Cihazlar & Bakım** entegrasyonunu indirin ve Home Assistant'ı yeniden başlatın.
-4. **Ayarlar → Cihazlar ve Hizmetler → Entegrasyon ekle** bölümünde **Cihazlar & Bakım** aratın ve kurulum akışını tamamlayın.
+## Install with HACS
 
-İlk sürüm beta olursa, önce az sayıda cihazı kapsama alıp mevcut bakım paketini geri dönüş için koruyun. İki sistemin haftalık raporlarını aynı anda etkinleştirmeyin.
+Device Care is a custom HACS repository. The repository is:
 
-### HACS simgesi
+`https://github.com/yesinali/ha-device-care`
 
-Entegrasyonun `brand/icon.png` ve `brand/icon@2x.png` dosyaları depoda bulunur. Home Assistant entegrasyon sayfasındaki marka simgesi ile HACS Marketplace kartındaki simge farklı yüzeylerdir. HACS 2.0.5, bazı kurulumlarda Marketplace CDN yerine eski simge yolunu kullandığı için depo kartında yer tutucu gösterebilir; bu, entegrasyon marka dosyalarının eksik olduğu anlamına gelmez. HACS sürümünüz bilinmiyorsa önce sürümü kontrol edin. İncelenen upstream düzeltmenin Home Assistant 2026.11 Marketplace dağıtımına girmesi planlanmıştır; 2026.10.x'te `hacs.json` için desteklenmeyen bir `icon` alanı eklemek çözüm değildir.
+1. In Home Assistant, open **HACS → Integrations**, open the menu, and choose **Custom repositories**.
+2. Enter the repository URL above and choose **Integration** as the category.
+3. Add it, find **Device Care** in HACS, download the available release, and restart Home Assistant.
+4. Open **Settings → Devices & services → Add integration**, search for **Device Care**, and follow the setup steps.
+5. Choose a device scope and which devices to include. The Device Care panel will then appear in the Home Assistant sidebar for administrators.
 
-## Gizlilik ve kapsam
+The beta.5 source is not yet a published GitHub release, so HACS cannot install beta.5 until a release is published. Do not treat the beta.5 version number in source files as proof that a release is available. Use the newest release shown by HACS, or wait for beta.5 to appear there.
 
-Entegrasyon Home Assistant'ın yerel kayıtlarını ve durumlarını kullanmak üzere tasarlanmıştır. Bu depo kullanıcıya özel entity envanteri, adres, token veya ekran görüntüsü içermemelidir. Dış bulut ya da yapay zekâ servisine veri gönderimi planlanmamıştır.
+### Optional settings
 
-Sağlık geçmişi yalnızca entegrasyon kurulduktan ve izleme başladıktan sonraki gözlemleri kapsar. Home Assistant kapalıyken geçen aralık bilinmeyen kabul edilir; geçmişe dönük kesinti veya yüzde uptime uydurulmaz. “Son güncelleme” zamanı fiziksel son iletişim olarak yorumlanmaz.
+Device control settings are locked by default. An administrator must explicitly unlock them in the Device Care panel before changing supported Home Assistant controls. The unlock is temporary and resets when you disconnect, change device scope, or start a new session. Only supported controls that Home Assistant exposes with the required configuration metadata can be changed. Firmware installation is not offered.
 
-## Geliştirme
+The firmware column is hidden by default. Use **Edit → Table columns** in the panel to show it when Home Assistant provides firmware information.
 
-Geliştirme için Home Assistant test ortamı ve Node.js gerekir. Kullanıcıların Home Assistant üzerinde Node/npm çalıştırması gerekmez; arayüzün derlenmiş dosyaları entegrasyon paketinde dağıtılır.
+### HACS icon
 
-```sh
-cd frontend-src
-npm ci
-npm test
-npm run typecheck
-```
+The integration's local brand files are included at `custom_components/device_care/brand/`. The icon shown on an integration detail page and the icon shown on a HACS Marketplace repository card can come from different sources. HACS 2.0.5 may show a placeholder on the repository card because of its Marketplace/CDN icon path; the local integration brand files are still present. The repository does not add an unsupported `icon` field to `hacs.json` as a workaround.
 
-Python model/rapor testleri ve modül derlemesi, Home Assistant Core 2026.10.4 ile izole bir ortamda çalıştırılabilir:
+## Update, rollback, or remove
 
-```sh
-python3.14 -m pip install "homeassistant==2026.10.4" pytest
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3.14 -m pytest -q tests/test_core.py
-python3.14 -m compileall -q custom_components/device_care
-```
+- **Update:** install an available release from HACS and restart Home Assistant. Review the release notes before updating.
+- **Rollback:** if HACS offers an earlier release, select that version and restart. Keep a Home Assistant backup so you can restore the integration files and configuration if needed.
+- **Remove:** remove Device Care through HACS, then restart Home Assistant. Removing the integration stops monitoring and removes its panel. Stored preferences and event history can remain in Home Assistant's storage after removal; this release does not provide a separate in-panel data purge. Event history is bounded by the retention setting (1–365 days, 30 days by default) and a 20,000-event cap while the integration is running. Do not edit Home Assistant's `.storage` files while it is running; keep a full backup before file-level maintenance.
 
-An isolated Home Assistant lifecycle smoke check is also included. It starts a
-temporary instance and should only be run in a disposable environment:
+## Privacy and support
 
-```sh
-python3.14 -m pip install "homeassistant==2026.10.4"
-python3.14 tests/runtime_check.py
-```
+Device Care reads Home Assistant's local device registry, entity registry, and entity states. It has no external cloud or AI service dependency. Its stored history begins when monitoring starts; time before installation and periods when Home Assistant was unavailable are not reconstructed.
 
-The smoke check skips HA's optional dependency installer and stubs network
-adapter discovery for containers without network interfaces. It does not
-validate hardware integrations or a user's Home Assistant configuration.
+To report a problem, include your Home Assistant version, Device Care version, HACS version if relevant, what you expected, what happened, and steps to reproduce it. Before sharing logs, remove access tokens, passwords, private URLs, public IP addresses, and any device names or identifiers you consider sensitive. Do not attach your full Home Assistant configuration or an unredacted device/entity dump. See [GitHub Issues](https://github.com/yesinali/ha-device-care/issues).
 
-CI bu Home Assistant sürümünü test hedefi olarak kullanır. Bu hedef, henüz bildirilmiş bir minimum destek sürümü anlamına gelmez. CI ve yerel kontroller gerçek Home Assistant kurulumu, cihaz uyumluluğu veya kullanıcı arayüzünün canlı doğrulaması yerine geçmez.
-
-## Katkı ve hata bildirimi
-
-Hata bildirirken Home Assistant ve HACS sürümünü, beklenen/gerçek davranışı ve yeniden üretme adımlarını paylaşın. Hassas ev yapılandırmasını, token'ları, IP adreslerini veya gerçek entity dökümlerini eklemeyin; örnek verileri anonimleştirin. Ayrıntılar için [CONTRIBUTING.md](CONTRIBUTING.md) sayfasına bakın.
+Device Care is distributed under the [MIT License](LICENSE).

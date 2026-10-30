@@ -1,5 +1,7 @@
 # Device Care WebSocket contract
 
+The integration setup/options flow uses Home Assistant translations (`strings.json` English US default, `translations/tr.json` Turkish). The custom sidebar panel title is the fixed `Device Care` label because Home Assistant registers one shared panel title per instance; the panel content follows each user's frontend locale. The optional weekly persistent notification uses the Home Assistant instance language.
+
 This contract is shared by the panel and the Python integration. All commands use the authenticated Home Assistant WebSocket connection. IDs are strings; timestamps are UTC ISO 8601.
 
 ## Commands

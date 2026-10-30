@@ -29,13 +29,13 @@ let registered;
 before(async () => { registered = await import('../../custom_components/device_care/frontend/device-care.js'); });
 after(async () => { await browserWindow.happyDOM.close(); });
 
-function mount({ failure = false, slowSave = false, slowEntity = false } = {}) {
+function mount({ failure = false, slowSave = false, slowEntity = false, locale = 'tr-TR', timeZone = 'UTC' } = {}) {
   let devices = structuredClone(initialDevices);
   let preferences = defaultPreferences();
   let updateCallback;
   let unsubscribed = false;
   const calls = [];
-  const hass = { language: 'en', connection: {
+  const hass = { language: locale, locale: { language: locale }, config: { time_zone: timeZone }, connection: {
     async sendMessagePromise(message) {
       calls.push(message);
       if (message.type === 'device_care/get_data') {
@@ -108,7 +108,7 @@ test('scope editor exposes all scope options and manual selection uses all_devic
 
 test('surfaces WebSocket load errors instead of showing an empty healthy inventory', async () => {
   const app = mount({ failure:true }); await settle(app.element);
-  assert.match(app.element.shadowRoot.querySelector('[role="alert"]')?.textContent ?? '', /backend unavailable/);
+  assert.match(app.element.shadowRoot.querySelector('[role="alert"]')?.textContent ?? '', /Home Assistant bağlantısı kullanılamıyor/);
   assert.doesNotMatch(app.element.shadowRoot.textContent, /0 erişilebilir/);
   app.element.remove();
 });
@@ -385,5 +385,43 @@ test('area column and drawer stay tied to actual area when grouping is disabled;
   app.element.shadowRoot.querySelector('tbody tr').click(); await settle(app.element);
   assert.equal([...app.element.shadowRoot.querySelectorAll('.detail-row')].find((row) => row.textContent.includes('Oda'))?.textContent, 'OdaHall');
   assert.match(registered.DeviceCarePanel.styles.cssText, /align-items:start/);
+  app.element.remove();
+});
+
+test('renders English US UI and updates labels immediately when HA locale changes', async () => {
+  const app = mount({ locale:'en-US', timeZone:'America/Los_Angeles' }); await settle(app.element);
+  const root = app.element.shadowRoot;
+  assert.match(root.querySelector('h1').textContent,/Devices & Care/);
+  assert.match(root.textContent,/Motion detected/);
+  assert.equal(root.querySelector('.control-safety input')?.getAttribute('aria-label'),'Allow device setting changes');
+  const translatedDevice = { ...app.element.data.devices[0], name:'Salon Hareket', entities:app.element.data.devices[0].entities.map((entity) => ({ ...entity, name:'Salon hareket sensörü' })) };
+  app.element.data = { ...app.element.data, devices:[translatedDevice,...app.element.data.devices.slice(1)], all_devices:[translatedDevice,...app.element.data.all_devices.slice(1)] };
+  await settle(app.element);
+  assert.match(root.textContent,/Salon Hareket/);
+  root.querySelector('tbody tr')?.click(); await settle(app.element);
+  assert.match(root.querySelector('.drawer').textContent,/Salon hareket sensörü/,'entity-provided labels remain unchanged in English UI');
+  const expectedDate = new Intl.DateTimeFormat('en-US',{dateStyle:'short',timeStyle:'short',timeZone:'America/Los_Angeles'}).format(new Date('2026-10-27T12:00:00Z'));
+  assert.match(root.querySelector('.subtitle').textContent,new RegExp(expectedDate.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),'dates use the Home Assistant timezone');
+  root.querySelector('.top-actions button').click(); await settle(app.element);
+  assert.match(root.textContent,/View and scope/);
+  assert.match(root.textContent,/Save changes/);
+  assert.match(root.textContent,/Automatically include new devices/);
+  app.element.hass = { ...app.element.hass, language:'tr-TR', locale:{language:'tr-TR'} };
+  await settle(app.element);
+  assert.match(root.querySelector('h1').textContent,/Cihazlar & Bakım/);
+  assert.match(root.textContent,/Hareket algılanıyor/);
+  assert.match(root.textContent,/Görünüm ve kapsam/);
+  const expectedTurkishDate = new Intl.DateTimeFormat('tr-TR',{dateStyle:'short',timeStyle:'short',timeZone:'America/Los_Angeles'}).format(new Date('2026-10-27T12:00:00Z'));
+  assert.ok(root.querySelector('.subtitle').textContent.includes(expectedTurkishDate),'Turkish date formatting still honors the HA timezone');
+  app.element.remove();
+});
+
+test('defaults locale fallback to English US and localizes initial load errors', async () => {
+  const app = mount({ failure:true, locale:'en-US' }); await settle(app.element);
+  assert.match(app.element.shadowRoot.textContent,/Devices & Care/);
+  assert.match(app.element.shadowRoot.textContent,/Retry/);
+  assert.match(app.element.shadowRoot.textContent,/Home Assistant connection is unavailable/);
+  app.element.hass = { connection:app.element.hass.connection, config:{time_zone:'UTC'} }; await settle(app.element);
+  assert.match(app.element.shadowRoot.querySelector('h1').textContent,/Devices & Care/,'missing locale falls back to English US');
   app.element.remove();
 });

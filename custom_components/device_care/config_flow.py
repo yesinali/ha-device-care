@@ -28,8 +28,13 @@ class DeviceCareConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_confirm()
             return await self.async_step_selection()
         schema = vol.Schema({
-            vol.Required("scope", default="all"): selector.SelectSelector(selector.SelectSelectorConfig(
-                options=[{"value": key, "label": label} for key, label in [("all", "Tüm uygun cihazlar"), ("area", "Oda"), ("floor", "Kat"), ("label", "Etiket"), ("integration", "Entegrasyon"), ("manual", "Elle cihaz seç")]], mode=selector.SelectSelectorMode.DROPDOWN)),
+            vol.Required("scope", default="all"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["all", "area", "floor", "label", "integration", "manual"],
+                    translation_key="device_scope",
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
             vol.Required("auto_include_new", default=True): bool,
         })
         return self.async_show_form(step_id="user", data_schema=schema)
@@ -80,7 +85,7 @@ class DeviceCareConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_confirm(self, user_input=None):
         if user_input is not None:
             payload = {key: value for key, value in self._selection.items() if key != "selected_count"}
-            return self.async_create_entry(title="Cihazlar & Bakım", data=payload)
+            return self.async_create_entry(title="Device Care", data=payload)
         return self.async_show_form(step_id="confirm", data_schema=vol.Schema({vol.Required("confirm", default=True): bool}), description_placeholders={"count": str(self._selection.get("selected_count", 0))})
 
     @staticmethod

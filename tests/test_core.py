@@ -1,5 +1,6 @@
 """Import-free tests for Device Care's health and report calculations."""
 import sys
+import json
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,9 +17,28 @@ from device_care.discovery import (
 from device_care.const import SIGNAL_CLASSES
 from device_care.history import close_open_events, record_transition, report_window
 from device_care.discovery import include_new_manual_devices
+from device_care import _weekly_report_notification
 
 
 class CoreTests(unittest.TestCase):
+  def test_localization_files_and_weekly_notification(self):
+    component = Path(__file__).parents[1] / "custom_components" / "device_care"
+    base = json.loads((component / "strings.json").read_text())
+    english = json.loads((component / "translations" / "en.json").read_text())
+    turkish = json.loads((component / "translations" / "tr.json").read_text())
+    self.assertEqual(base, english)
+    values = {"outage_starts": 2, "device_outage_seconds": 1800, "low_battery": 1}
+    title, text = _weekly_report_notification(values, "2026-10-01T00:00:00+00:00", "en")
+    self.assertEqual(title, "Device Care — weekly report")
+    self.assertIn("2 outage starts", text)
+    title, text = _weekly_report_notification(values, None, "tr-TR")
+    self.assertIn("haftalık rapor", title)
+    self.assertIn("2 kesinti başlangıcı", text)
+    self.assertEqual(
+      set(base["selector"]["device_scope"]["options"]),
+      {"all", "area", "floor", "label", "integration", "manual"},
+    )
+
   def test_signal_states_are_explicit(self):
     self.assertEqual(signal_meaning("on"), "active")
     self.assertEqual(signal_meaning("off"), "inactive")
