@@ -85,15 +85,21 @@ def build_inventory(hass: Any, preferences: dict[str, Any]) -> dict[str, Any]:
         signals: dict[str, dict[str, Any] | None] = {}
         for kind, classes in SIGNAL_CLASSES.items():
             candidates = [e for e in items if e["device_class"] in classes]
+            if kind == "battery":
+                candidates.extend(e for e in items if _is_battery_voltage(e) and e not in candidates)
             forced = selected.get(kind)
             if forced:
                 candidates = [e for e in items if e["entity_id"] == forced]
+            # A battery class may be exposed as either a numeric sensor (level
+            # or voltage) or a binary sensor (low battery). Don't silently pick
+            # an arbitrary source when a device has several candidates.
+            candidates = sorted(candidates, key=lambda e: e["entity_id"])
             signal = candidates[0] if len(candidates) == 1 else None
             signals[kind] = ({
                 "entity_id": signal["entity_id"], "state": signal["state"],
-                "value": signal["attributes"].get("unit_of_measurement") and _numeric_or_state(signal["state"]) or _numeric_or_state(signal["state"]),
+                "value": _signal_value(kind, signal),
                 "unit": signal["unit"],
-                "meaning": signal_meaning(signal["state"], expected_states.get(signal["entity_id"]) == signal["state"]),
+                "meaning": _signal_meaning(kind, signal, expected_states.get(signal["entity_id"]) == signal["state"]),
             } if signal else None)
         primary = selected.get("connectivity")
         expected_ids = {entity["entity_id"] for entity in items if expected_states.get(entity["entity_id"]) == entity["state"]}
@@ -162,3 +168,50 @@ def _numeric_or_state(value: str) -> int | float | str | None:
         return int(number) if number.is_integer() else number
     except (ValueError, TypeError):
         return value if value not in {"unknown", "unavailable", ""} else None
+
+
+def _signal_value(kind: str, signal: dict[str, Any]) -> int | float | str | None:
+    state = signal["state"]
+    if kind == "battery":
+        # Some integrations publish the level as an attribute while the state
+        # contains a label (or vice versa). Prefer the live numeric state.
+        parsed = _numeric_or_state(state)
+        if isinstance(parsed, (int, float)):
+            return parsed
+        if state in {"unknown", "unavailable", ""}:
+            return None
+        for key in ("battery_level", "battery", "percentage"):
+            parsed = _numeric_or_state(signal["attributes"].get(key))
+            if isinstance(parsed, (int, float)):
+                return parsed
+        return parsed
+    return _numeric_or_state(state)
+
+
+def _signal_meaning(kind: str, signal: dict[str, Any], expected_off: bool) -> str:
+    if kind == "battery" and signal.get("domain") == "binary_sensor" and signal.get("device_class") == "battery":
+        if expected_off:
+            return "expected_off"
+        if signal["state"] == "on":
+            return "low"
+        if signal["state"] == "off":
+            return "ok"
+    return signal_meaning(signal["state"], expected_off)
+
+
+def _is_battery_voltage(entity: dict[str, Any]) -> bool:
+    if entity.get("domain") != "sensor":
+        return False
+    label = f"{entity.get('entity_id', '')} {entity.get('name', '')}".casefold()
+    unit = str(entity.get("unit") or "").casefold()
+    return "battery" in label and unit in {"%", "v", "mv"}
+
+
+def is_low_battery(signal: dict[str, Any] | None) -> bool:
+    """Only interpret percentage battery readings as low-battery levels."""
+    return bool(
+        signal
+        and str(signal.get("unit") or "").casefold() in {"%", "percent", "percentage"}
+        and isinstance(signal.get("value"), (int, float))
+        and signal["value"] < 20
+    )

@@ -46,7 +46,8 @@ async def _get_report_data(hass, window: str) -> dict[str, Any]:
     tracked_events = [event for event in runtime["store"].data["events"] if event["device_id"] in tracked_ids]
     data = report_window(tracked_events, datetime.now(timezone.utc), _WINDOWS[window], runtime["store"].data.get("monitoring_since"))
     data["window"] = window
-    low = sum(1 for d in inventory["devices"] if d["signals"]["battery"] and isinstance(d["signals"]["battery"]["value"], (int, float)) and d["signals"]["battery"]["value"] < 20)
+    from .discovery import is_low_battery
+    low = sum(1 for d in inventory["devices"] if is_low_battery(d["signals"]["battery"]))
     data["stats"]["low_battery"] = low
     data["stats"]["missing_data"] = sum(1 for d in inventory["devices"] if d["health"] == "unknown")
     return data
@@ -143,14 +144,31 @@ async def ws_set_preferences(hass, connection, msg):
             connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, "Invalid source overrides")
             return
         all_devices = build_inventory(hass, {"scope": "all", "excluded_device_ids": []})["devices"]
-        devices_by_id = {device["id"]: {entity["entity_id"] for entity in device["entities"]} for device in all_devices}
+        devices_by_id = {
+            device["id"]: {entity["entity_id"]: entity for entity in device["entities"]}
+            for device in all_devices
+        }
         for device_id, sources in patch["source_overrides"].items():
             if not isinstance(device_id, str) or not isinstance(sources, dict) or set(sources) - _SIGNALS:
                 connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, "Invalid source override")
                 return
-            for entity_id in sources.values():
-                if entity_id is not None and (hass.states.get(entity_id) is None or device_id not in devices_by_id or entity_id not in devices_by_id[device_id]):
+            for role, entity_id in sources.items():
+                if entity_id is None:
+                    continue
+                entity = devices_by_id.get(device_id, {}).get(entity_id)
+                if entity is None or hass.states.get(entity_id) is None:
                     connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Selected entity does not exist")
+                    return
+                if role == "connectivity" and (
+                    entity.get("device_class") != "connectivity"
+                ):
+                    connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, "Connectivity source must be a connectivity entity")
+                    return
+                if role == "battery" and not (
+                    entity.get("device_class") == "battery"
+                    or (entity.get("domain") == "sensor" and "battery" in f"{entity.get('entity_id', '')} {entity.get('name', '')}".casefold() and str(entity.get("unit") or "").casefold() in {"%", "v", "mv"})
+                ):
+                    connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, "Battery source must be a battery or battery voltage/level entity")
                     return
     if "expected_off_rules" in patch:
         if not isinstance(patch["expected_off_rules"], list):

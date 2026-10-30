@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "custom_components"))
 
 from device_care.health import derive_health, signal_meaning
+from device_care.discovery import _signal_meaning, _signal_value, is_low_battery
 from device_care.history import close_open_events, record_transition, report_window
 from device_care.discovery import include_new_manual_devices
 
@@ -23,14 +24,55 @@ class CoreTests(unittest.TestCase):
 
   def test_health_requires_reliable_source(self):
     self.assertEqual(derive_health([], None)[0], "unknown")
+    self.assertEqual(derive_health([{
+      "entity_id": "binary_sensor.motion", "domain": "binary_sensor",
+      "device_class": "motion", "state": "on",
+    }], "binary_sensor.removed_connectivity"), ("unknown", "primary_source_missing"))
     self.assertEqual(derive_health([{"entity_id": "binary_sensor.link", "device_class": "connectivity", "state": "on"}])[0], "online")
     self.assertEqual(derive_health([{"entity_id": "binary_sensor.link", "device_class": "connectivity", "state": "off"}])[0], "offline")
-    self.assertEqual(derive_health([{"entity_id": "binary_sensor.problem", "device_class": "problem", "state": "on"}])[0], "offline")
-    self.assertEqual(derive_health([{"entity_id": "binary_sensor.problem", "device_class": "problem", "state": "off"}])[0], "online")
+    self.assertEqual(derive_health([{"entity_id": "binary_sensor.problem", "device_class": "problem", "domain": "binary_sensor", "state": "on"}]), ("partial", "device_problem"))
+    self.assertEqual(derive_health([{"entity_id": "binary_sensor.problem", "device_class": "problem", "domain": "binary_sensor", "state": "off"}])[0], "unknown")
     self.assertEqual(derive_health([
         {"entity_id": "binary_sensor.a", "device_class": "connectivity", "state": "on"},
         {"entity_id": "binary_sensor.b", "device_class": "connectivity", "state": "unavailable"},
     ])[0], "partial")
+
+  def test_operational_state_is_positive_availability_evidence_only(self):
+    self.assertEqual(derive_health([{
+      "entity_id": "binary_sensor.room_motion", "domain": "binary_sensor",
+      "device_class": "motion", "state": "on",
+    }]), ("online", "state_available"))
+    self.assertEqual(derive_health([{
+      "entity_id": "binary_sensor.room_motion", "domain": "binary_sensor",
+      "device_class": "motion", "state": "off",
+    }]), ("online", "state_available"))
+    self.assertEqual(derive_health([{
+      "entity_id": "sensor.rssi", "domain": "sensor", "device_class": None,
+      "entity_category": "diagnostic", "state": "-58",
+    }])[0], "unknown")
+    self.assertEqual(derive_health([{
+      "entity_id": "binary_sensor.motion", "domain": "binary_sensor",
+      "device_class": "motion", "state": "unknown",
+    }])[0], "unknown")
+    self.assertEqual(derive_health([{
+      "entity_id": "binary_sensor.connectivity", "domain": "binary_sensor",
+      "device_class": "connectivity", "entity_category": "diagnostic", "state": "on",
+    }])[0], "online")
+    self.assertEqual(derive_health([
+      {"entity_id": "binary_sensor.link", "domain": "binary_sensor", "device_class": "connectivity", "state": "off"},
+      {"entity_id": "binary_sensor.problem", "domain": "binary_sensor", "device_class": "problem", "state": "on"},
+    ]), ("offline", "connectivity_off"))
+
+  def test_battery_numeric_voltage_and_binary_low_are_distinct(self):
+    percent = {"state": "87", "device_class": "battery", "domain": "sensor", "attributes": {}}
+    voltage = {"state": "2.91", "device_class": None, "domain": "sensor", "attributes": {}}
+    low = {"state": "on", "device_class": "battery", "domain": "binary_sensor", "attributes": {}}
+    self.assertEqual(_signal_value("battery", percent), 87)
+    self.assertEqual(_signal_value("battery", voltage), 2.91)
+    self.assertEqual(_signal_meaning("battery", low, False), "low")
+    self.assertEqual(_signal_meaning("battery", {**low, "state": "off"}, False), "ok")
+    self.assertTrue(is_low_battery({"value": 12, "unit": "%"}))
+    self.assertFalse(is_low_battery({"value": 2.9, "unit": "V"}))
     self.assertEqual(derive_health([
         {"entity_id": "binary_sensor.a", "device_class": "connectivity", "state": "on"},
         {"entity_id": "binary_sensor.b", "device_class": "connectivity", "state": "off"},

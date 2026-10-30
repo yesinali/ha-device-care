@@ -122,3 +122,55 @@ test('disables a CONFIG switch when its state is unavailable', async () => {
   assert.equal(control.disabled, true);
   app.element.remove();
 });
+
+test('shows numeric battery unknown values but never stale unavailable values', async () => {
+  const app = mount(); await settle(app.element);
+  const [device, ...rest] = app.devices;
+  const sensor = { ...device, signals: { ...device.signals, battery:{ entity_id:'sensor.battery_voltage',state:'2.7',value:2.7,unit:'V',meaning:'unknown' } } };
+  app.devices = [sensor, ...rest];
+  app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'state' } });
+  await settle(app.element, 120);
+  assert.match(app.element.shadowRoot.textContent, /Pil 2\.7 V · durum bilinmiyor/);
+  const unavailable = { ...sensor, signals:{ ...sensor.signals, battery:{ ...sensor.signals.battery,state:'unavailable',value:2.7,meaning:'unavailable' } } };
+  app.devices = [unavailable, ...rest];
+  app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'state' } });
+  await settle(app.element, 120);
+  assert.match(app.element.shadowRoot.textContent, /Pil erişilemiyor/);
+  assert.doesNotMatch(app.element.shadowRoot.textContent, /Pil 2\.7 V/);
+  const cachedUnknown = { ...sensor, signals:{ ...sensor.signals, battery:{ ...sensor.signals.battery,state:'unknown',value:2.7,meaning:'unknown' } } };
+  app.devices = [cachedUnknown, ...rest];
+  app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'state' } });
+  await settle(app.element, 120);
+  assert.match(app.element.shadowRoot.textContent, /Pil bilinmiyor/);
+  assert.doesNotMatch(app.element.shadowRoot.textContent, /Pil 2\.7 V/);
+  app.element.remove();
+});
+
+test('offers battery voltage sources and excludes diagnostic RSSI from connectivity sources', async () => {
+  const app = mount(); await settle(app.element);
+  const [device, ...rest] = app.devices;
+  const entities = [...device.entities,
+    { entity_id:'sensor.sensor_battery_voltage',name:'Battery voltage',state:'2.8',domain:'sensor',device_class:null,entity_category:null,unit:'V',attributes:{},disabled:false },
+    { entity_id:'binary_sensor.device_link',name:'Device link',state:'on',domain:'binary_sensor',device_class:'connectivity',entity_category:null,unit:null,attributes:{},disabled:false },
+    { entity_id:'binary_sensor.device_link_diag',name:'Diagnostic link status',state:'on',domain:'binary_sensor',device_class:'connectivity',entity_category:'diagnostic',unit:null,attributes:{},disabled:false },
+    { entity_id:'sensor.device_rssi',name:'RSSI',state:'-67',domain:'sensor',device_class:null,entity_category:'diagnostic',unit:'dBm',attributes:{},disabled:false },
+  ];
+  app.devices = [{ ...device, integrations:['mqtt','matter'], entities }, ...rest.map((item) => ({ ...item, integrations:[item.integration ?? 'zha'] }))];
+  app.updateCallback({ type:'event', event_type:'device_care/updated', data:{ reason:'registry' } });
+  await settle(app.element, 120);
+  const edit = [...app.element.shadowRoot.querySelectorAll('button')].find((button) => button.textContent.includes('Düzenle'));
+  edit.click(); await settle(app.element);
+  const batteryField = [...app.element.shadowRoot.querySelectorAll('.sources .field')].find((field) => field.textContent.includes('Sensor active · Pil'));
+  assert.ok([...batteryField.querySelectorAll('option')].some((option) => option.value === 'sensor.sensor_battery_voltage'));
+  const connectivityField = [...app.element.shadowRoot.querySelectorAll('.sources .field')].find((field) => field.textContent.includes('Sensor active · Bağlantı'));
+  const connectivityOptions = [...connectivityField.querySelectorAll('option')].map((option) => option.value);
+  assert.ok(connectivityOptions.includes('binary_sensor.device_link'));
+  assert.ok(connectivityOptions.includes('binary_sensor.device_link_diag'));
+  assert.ok(!connectivityOptions.includes('sensor.device_rssi'));
+  const scope = app.element.shadowRoot.querySelector('.settings-panel select');
+  scope.value = 'integration'; scope.dispatchEvent(new Event('change', { bubbles:true })); await settle(app.element);
+  const integrationScope = [...app.element.shadowRoot.querySelectorAll('.settings-panel select')].find((select) => [...select.options].some((option) => option.value === 'matter'));
+  assert.ok(integrationScope);
+  assert.ok([...integrationScope.options].some((option) => option.value === 'matter'));
+  app.element.remove();
+});

@@ -102,7 +102,8 @@ async def async_setup_entry(hass, entry) -> bool:
         tracked_ids = {device["id"] for device in inventory["devices"]}
         events = [event for event in store.data["events"] if event["device_id"] in tracked_ids]
         report = report_window(events, now, 168, store.data.get("monitoring_since"))
-        report["stats"]["low_battery"] = sum(1 for d in inventory["devices"] if d["signals"]["battery"] and isinstance(d["signals"]["battery"]["value"], (int, float)) and d["signals"]["battery"]["value"] < 20)
+        from .discovery import is_low_battery
+        report["stats"]["low_battery"] = sum(1 for d in inventory["devices"] if is_low_battery(d["signals"]["battery"]))
         report["stats"]["missing_data"] = sum(1 for d in inventory["devices"] if d["health"] == "unknown")
         stats = report["stats"]
         message = (

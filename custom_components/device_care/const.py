@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "device_care"
-VERSION = "0.1.0-beta.1"
+VERSION = "0.1.0-beta.2"
 PLATFORMS: list[str] = []
 PANEL_URL = "device-care"
 PANEL_TITLE = "Cihazlar & Bakım"
@@ -26,7 +26,7 @@ PREFS_DEFAULT = {
     "scope_value": None,
 }
 SIGNAL_CLASSES = {
-    "motion": {"motion", "occupancy"},
+    "motion": {"motion"},
     "occupancy": {"occupancy"},
     "battery": {"battery"},
     "connectivity": {"connectivity", "problem"},

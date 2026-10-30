@@ -46,12 +46,12 @@ Subscriptions are released through Home Assistant's standard `unsubscribe_events
     "battery": null,
     "connectivity": null
   },
-  "health": "unknown",
-  "health_reason": "no_health_source"
+  "health": "online",
+  "health_reason": "state_available"
 }
 ```
 
-Signal `meaning`: `active`, `inactive`, `unavailable`, `unknown`, `missing`, or `expected_off`. Device health: `online`, `offline`, `partial`, `unknown`, or `expected_off`. An unconfigured device remains unknown; a missing state is not treated as healthy.
+Signal `meaning` is `active`, `inactive`, `unavailable`, `unknown`, `missing`, or `expected_off`; battery binary sensors may also use `low` or `ok`. Numeric battery values (percent or voltage) retain `value` and `unit` independently from `meaning`. Device health is `online`, `offline`, `partial`, `unknown`, or `expected_off`. Explicit connectivity entities can report online/offline; problem-class entities are inverted (problem on means offline). Without one, a current state on an enabled operational entity is positive evidence of state availability, but an off state is not an outage. This is not a heartbeat guarantee. Diagnostic telemetry such as RSSI/LQI and unknown/unavailable states do not establish health. Devices without reliable current state remain unknown.
 
 ## Preferences
 
