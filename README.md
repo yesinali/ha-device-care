@@ -2,20 +2,21 @@
 
 Home Assistant için cihaz envanteri ve bakım görünümü sunan özel entegrasyon. Entegrasyon Home Assistant'a zaten kayıtlı cihazları kullanır; ağ taraması veya yeni cihaz eşleştirmesi yapmaz.
 
-> **Geliştirme önizlemesi:** Bu depo henüz bir beta sürüm veya gerçek Home Assistant kurulumunda doğrulanmış ürün değildir. Kurulu Home Assistant sürümünü doğrulamadan minimum sürüm bildirilmez. Güncel geliştirme dalı kurulum için kararlı kabul edilmemelidir.
+> **Geliştirme önizlemesi:** Yayımlanmış son sürüm `0.1.0-beta.3`; geliştirme dalı `0.1.0-beta.4` adayıdır. Gerçek bir Home Assistant kurulumunda veya fiziksel cihazlarda doğrulanmış kararlı ürün değildir. CI hedefi Home Assistant Core 2026.10.4'tür; bu, minimum destek sürümü bildirimi değildir.
 
 ## Özellikler
 
 - Cihazları Home Assistant kayıtlarından keşfeder ve seçilen kapsamda listeler.
 - Kompakt envanter ve oda gruplu kart düzenleri sunar.
 - Hareket/varlık sensörü durumlarını metin ve ikonla gösterir; bilinmeyen ve erişilemeyen durumları ayrı tutar.
+- Home Assistant'ın sağladığı firmware durumunu salt okunur gösterir. Envanterde firmware sütunu varsayılan olarak kapalıdır; **Düzenle → Tabloda gösterilen sütunlar** bölümünden açılabilir.
 - Home Assistant'ın sağladığı cihaz/entity bilgilerini kullanır. Zigbee2MQTT, Matter veya başka bir entegrasyonun yerine geçmez.
 
 Özelliklerin ve kabul koşullarının durumu [CHANGELOG.md](CHANGELOG.md) dosyasında tutulur. Gerçek cihaz, farklı ekran boyutları ve Home Assistant sürümleri üzerinde doğrulama yapılmadan bu özellikler kurulumunuz için garanti edilmez.
 
 ## Kurulum
 
-> Bu adımlar yalnızca bir GitHub Release yayımlandıktan sonra geçerlidir. Şu anda bu depo için yayımlanmış bir kurulum paketi yoktur.
+> HACS kurulum adımları yayımlanmış beta.3 sürümü için geçerlidir. Beta.4 adayı henüz yayımlanmış bir GitHub Release değildir; sürüm numarası tek başına kurulum paketi yayımlandığı anlamına gelmez.
 
 1. HACS → **Entegrasyonlar** → sağ üst menü → **Özel depolar** bölümünü açın.
 2. Bu deponun GitHub URL'sini ekleyin ve kategori olarak **Integration** seçin.
@@ -23,6 +24,10 @@ Home Assistant için cihaz envanteri ve bakım görünümü sunan özel entegras
 4. **Ayarlar → Cihazlar ve Hizmetler → Entegrasyon ekle** bölümünde **Cihazlar & Bakım** aratın ve kurulum akışını tamamlayın.
 
 İlk sürüm beta olursa, önce az sayıda cihazı kapsama alıp mevcut bakım paketini geri dönüş için koruyun. İki sistemin haftalık raporlarını aynı anda etkinleştirmeyin.
+
+### HACS simgesi
+
+Entegrasyonun `brand/icon.png` ve `brand/icon@2x.png` dosyaları depoda bulunur. Home Assistant entegrasyon sayfasındaki marka simgesi ile HACS Marketplace kartındaki simge farklı yüzeylerdir. HACS 2.0.5, bazı kurulumlarda Marketplace CDN yerine eski simge yolunu kullandığı için depo kartında yer tutucu gösterebilir; bu, entegrasyon marka dosyalarının eksik olduğu anlamına gelmez. HACS sürümünüz bilinmiyorsa önce sürümü kontrol edin. İncelenen upstream düzeltmenin Home Assistant 2026.11 Marketplace dağıtımına girmesi planlanmıştır; 2026.10.x'te `hacs.json` için desteklenmeyen bir `icon` alanı eklemek çözüm değildir.
 
 ## Gizlilik ve kapsam
 

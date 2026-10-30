@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here. The project has not published a release yet.
 
+## 0.1.0-beta.4
+
+- Read-only firmware status from Home Assistant firmware update entities; keep unknown and skipped states explicit and never install updates.
+- Show the device registry's reported software version only as current-version metadata, without inferring an available or latest release.
+- Require a temporary explicit unlock before supported CONFIG controls can be changed.
+- Expose Home Assistant entity icons for type-aware display.
+- Document the known HACS 2.0.5 repository-card icon CDN limitation.
+
 ## 0.1.0-beta.3
 
 - Prefer a unique battery percentage source over voltage; preserve same-priority ambiguity and validate saved source overrides.

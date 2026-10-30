@@ -3,13 +3,15 @@ import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "custom_components"))
 
 from device_care.health import derive_health, has_available_state, signal_meaning
 from device_care.discovery import (
   _device_capabilities, _latest_event_activity, _select_battery_source, _select_signal,
-  _signal_meaning, _signal_value, is_low_battery, is_valid_signal_source,
+  _firmware_update, _reported_sw_version, _signal_meaning, _signal_value, is_low_battery,
+  is_valid_signal_source,
 )
 from device_care.const import SIGNAL_CLASSES
 from device_care.history import close_open_events, record_transition, report_window
@@ -119,10 +121,49 @@ class CoreTests(unittest.TestCase):
     entities = [
       {"domain": "event", "device_class": "button", "entity_id": "event.remote", "attributes": {}, "disabled": False},
       {"domain": "sensor", "device_class": "battery", "entity_id": "sensor.remote_battery", "unit": "%", "name": "Battery", "attributes": {}, "disabled": False},
+      {"domain": "update", "device_class": "firmware", "entity_id": "update.remote_firmware", "attributes": {}, "disabled": False},
     ]
     device_type, capabilities = _device_capabilities(entities, {"battery": None, "connectivity": None, "motion": None, "occupancy": None})
     self.assertEqual(device_type, "remote")
-    self.assertEqual(capabilities, ["activity", "battery"])
+    self.assertEqual(capabilities, ["activity", "battery", "firmware"])
+
+  def test_device_type_prioritizes_light_over_button_and_distinguishes_button_from_tv(self):
+    empty_signals = {"motion": None, "occupancy": None, "battery": None, "connectivity": None}
+    light_type, _ = _device_capabilities([
+      {"domain": "light", "device_class": None, "entity_id": "light.room", "attributes": {}, "disabled": False},
+      {"domain": "button", "device_class": None, "entity_id": "button.identify", "attributes": {}, "disabled": False},
+    ], empty_signals)
+    button_type, _ = _device_capabilities([
+      {"domain": "button", "device_class": None, "entity_id": "button.remote", "attributes": {}, "disabled": False},
+    ], empty_signals)
+    tv_type, _ = _device_capabilities([
+      {"domain": "media_player", "device_class": "tv", "entity_id": "media_player.tv", "attributes": {}, "disabled": False},
+    ], empty_signals)
+    self.assertEqual(light_type, "light")
+    self.assertEqual(button_type, "button")
+    self.assertEqual(tv_type, "tv")
+
+  def test_firmware_update_model_preserves_unknown_and_skipped_versions(self):
+    entity = {
+      "entity_id": "update.router_firmware", "domain": "update", "device_class": "firmware",
+      "state": "off", "attributes": {
+        "title": "Router firmware", "installed_version": "1.2.0", "latest_version": "1.3.0",
+        "skipped_version": "1.3.0", "release_summary": "Security fixes", "release_url": "https://example.invalid/release",
+      },
+    }
+    update = _firmware_update(entity)
+    self.assertEqual(update["installed_version"], "1.2.0")
+    self.assertEqual(update["latest_version"], "1.3.0")
+    self.assertEqual(update["skipped_version"], "1.3.0")
+    self.assertFalse(update["update_available"])
+    self.assertIsNone(_firmware_update({**entity, "state": "unknown"})["update_available"])
+    self.assertIsNone(_firmware_update({**entity, "state": "unavailable"})["update_available"])
+    self.assertIsNone(_firmware_update({**entity, "domain": "sensor"}))
+
+  def test_registry_software_version_is_reported_current_only(self):
+    self.assertEqual(_reported_sw_version(SimpleNamespace(sw_version="4.2.1")), "4.2.1")
+    self.assertIsNone(_reported_sw_version(SimpleNamespace(sw_version=None)))
+    self.assertIsNone(_reported_sw_version(None))
     self.assertEqual(derive_health([
         {"entity_id": "binary_sensor.a", "device_class": "connectivity", "state": "on"},
         {"entity_id": "binary_sensor.b", "device_class": "connectivity", "state": "off"},

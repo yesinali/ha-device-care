@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "device_care"
-VERSION = "0.1.0-beta.3"
+VERSION = "0.1.0-beta.4"
 PLATFORMS: list[str] = []
 PANEL_URL = "device-care"
 PANEL_TITLE = "Cihazlar & Bakım"

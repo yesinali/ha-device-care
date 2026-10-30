@@ -11,7 +11,7 @@ This contract is shared by the panel and the Python integration. All commands us
 | `device_care/subscribe_updates` | `{type}` | Standard subscription ack `{subscription_id}` then event frames `{event_type:'device_care/updated', data:{reason, device_ids?}}` |
 | `device_care/get_report` | `{type, window:'24h'|'7d'}` | `Report` |
 | `device_care/generate_report` | `{type, window:'24h'|'7d'}` | `Report` |
-| `device_care/call_entity` | `{type, entity_id, service, data?}` | `{success:true}`; admin only; supported CONFIG operations only |
+| `device_care/call_entity` | `{type, entity_id, service, data?, controls_unlocked:true}` | `{success:true}`; admin only; supported CONFIG operations only; explicit per-request UI intent required |
 
 Subscriptions are released through Home Assistant's standard `unsubscribe_events` protocol, which is managed by `hass.connection.subscribeMessage`.
 
@@ -32,10 +32,13 @@ Subscriptions are released through Home Assistant's standard `unsubscribe_events
   "device_type": "sensor",
   "capabilities": ["motion"],
   "activity": null,
+  "reported_sw_version": null,
+  "firmware_updates": [],
   "entities": [{
     "entity_id": "binary_sensor.hall_motion",
     "name": "Hall motion",
     "state": "on",
+    "icon": null,
     "domain": "binary_sensor",
     "device_class": "motion",
     "entity_category": null,
@@ -56,7 +59,11 @@ Subscriptions are released through Home Assistant's standard `unsubscribe_events
 
 Signal `meaning` is `active`, `inactive`, `unavailable`, `unknown`, `missing`, `expected_off`, or `measured`; battery binary sensors may also use `low` or `ok`. Numeric battery values (percent or voltage) retain `value` and `unit` and use `meaning: measured`. When both battery percentage and voltage exist, a unique percentage reading is preferred; multiple same-priority readings remain ambiguous until the administrator selects a source. Device health is `online`, `offline`, `partial`, `unknown`, or `expected_off`. Explicit connectivity entities can report online/offline. A problem-class entity reporting `on` indicates a device fault and yields `partial`; it does not establish loss of connectivity. Without a connectivity entity, a current state on an enabled binary sensor or controllable entity is positive evidence that Home Assistant has a usable state, but an off state is not an outage. This is not a heartbeat guarantee. Battery/voltage telemetry and event timestamps do not establish current reachability. Devices without such evidence remain unknown with `health_reason: no_reachability_source`.
 
-`device_type` is inferred from entity domains/classes (`remote`, `light`, `switch`, `camera`, `cover`, `climate`, `fan`, `lock`, `sensor`, `other`). `capabilities` lists available entity roles such as `activity`, `battery`, `brightness`, `connectivity`, `control`, `motion`, `occupancy`, and `power_state`. `activity` is `null` or `{entity_id, event_type, last_event_at}`. `last_event_at` is included only when parsed from the event entity state or an explicit event timestamp attribute. Entity `last_updated`/`last_changed` timestamps are never treated as user activity. A remote can therefore show its last recorded press while its health stays `unknown` and its current reachability stays unclaimed. `call_entity` rejects a CONFIG action when the entity is currently `unknown` or `unavailable`, even if it was usable when the panel loaded.
+`device_type` is inferred from entity domains/classes (`remote`, `button`, `tv`, `light`, `switch`, `camera`, `cover`, `climate`, `fan`, `lock`, `sensor`, `other`). A supported light/switch/etc. domain takes priority over an auxiliary button entity. `capabilities` lists available entity roles such as `activity`, `battery`, `brightness`, `connectivity`, `control`, `firmware`, `motion`, `occupancy`, and `power_state`. Entity `icon` is a validated Material Design Icon name from the registry's current/original icon or state attributes. `activity` is `null` or `{entity_id, event_type, last_event_at}`. `last_event_at` is included only when parsed from the event entity state or an explicit event timestamp attribute. Entity `last_updated`/`last_changed` timestamps are never treated as user activity. A remote can therefore show its last recorded press while its health stays `unknown` and its current reachability stays unclaimed. `call_entity` rejects a CONFIG action when the entity is currently `unknown` or `unavailable`, even if it was usable when the panel loaded.
+
+`reported_sw_version` is the Home Assistant device-registry `sw_version`, when present; it is a reported current version only and is never used to infer a latest version or update status. `firmware_updates` contains one entry per enabled/visible entity whose domain is `update` and `device_class` is `firmware`: `{entity_id,title,state,installed_version,latest_version,skipped_version,release_summary,release_url,update_available}`. Metadata is copied only when HA supplies it; missing values are `null`. `update_available` is `true` for HA state `on`, `false` for `off`, and `null` for `unknown`/`unavailable` or any unrecognized state. HA defines `off` as up to date or skipped, so consumers must inspect `skipped_version` before labeling it current. Firmware data is read-only.
+
+`call_entity` also requires `controls_unlocked: true`, representing the panel's explicit temporary unlock toggle. This is write intent only, not an authorization token or persistent preference. Administrator authorization, CONFIG entity category, current state availability, and supported service/range checks still apply.
 
 ## Preferences
 

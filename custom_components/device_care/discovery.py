@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -66,9 +67,13 @@ def build_inventory(hass: Any, preferences: dict[str, Any]) -> dict[str, Any]:
         entity_category = getattr(entry, "entity_category", None) or attrs.get("entity_category")
         if entity_category is not None:
             entity_category = getattr(entity_category, "value", entity_category)
+        icon = getattr(entry, "icon", None) or getattr(entry, "original_icon", None) or attrs.get("icon")
+        if not isinstance(icon, str) or not re.fullmatch(r"mdi:[a-z0-9-]+", icon):
+            icon = None
         return {
             "entity_id": entry.entity_id,
             "name": entry.name or attrs.get("friendly_name") or entry.entity_id,
+            "icon": icon,
             "state": state_obj.state if state_obj is not None else "unknown",
             "domain": entry.domain,
             "device_class": attrs.get("device_class"),
@@ -107,6 +112,10 @@ def build_inventory(hass: Any, preferences: dict[str, Any]) -> dict[str, Any]:
             labels_ids.update(getattr(entry, "labels", []) or [])
         platforms = {getattr(entry, "platform", None) for entry in entity_entries if getattr(entry, "platform", None)}
         device_type, capabilities = _device_capabilities(items, signals)
+        firmware_updates = sorted(
+            (update for entity in items if (update := _firmware_update(entity)) is not None),
+            key=lambda update: update["entity_id"],
+        )
         return {
             "id": ident, "device_id": did, "name": name,
             "area_id": area_id, "floor_id": floor_id,
@@ -115,8 +124,10 @@ def build_inventory(hass: Any, preferences: dict[str, Any]) -> dict[str, Any]:
             "model": getattr(device, "model", None),
             "integration": next(iter(platforms)) if len(platforms) == 1 else None,
             "integrations": sorted(platforms),
+            "reported_sw_version": _reported_sw_version(device),
             "entities": items, "signals": signals, "health": health, "health_reason": reason,
             "device_type": device_type, "capabilities": capabilities, "activity": activity,
+            "firmware_updates": firmware_updates,
         }
 
     registered_devices = {}
@@ -163,6 +174,34 @@ def _numeric_or_state(value: str) -> int | float | str | None:
         return int(number) if number.is_integer() else number
     except (ValueError, TypeError):
         return value if value not in {"unknown", "unavailable", ""} else None
+
+
+def _optional_string(value: Any) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _reported_sw_version(device: Any) -> str | None:
+    """Return only the registry's current reported version; never infer latest/status."""
+    return _optional_string(getattr(device, "sw_version", None)) if device is not None else None
+
+
+def _firmware_update(entity: dict[str, Any]) -> dict[str, Any] | None:
+    """Return read-only metadata for one HA firmware update entity."""
+    if entity.get("domain") != "update" or entity.get("device_class") != "firmware":
+        return None
+    attrs = entity.get("attributes", {})
+    state = entity.get("state")
+    return {
+        "entity_id": entity["entity_id"],
+        "title": _optional_string(attrs.get("title")),
+        "state": state if isinstance(state, str) else "unknown",
+        "installed_version": _optional_string(attrs.get("installed_version")),
+        "latest_version": _optional_string(attrs.get("latest_version")),
+        "skipped_version": _optional_string(attrs.get("skipped_version")),
+        "release_summary": _optional_string(attrs.get("release_summary")),
+        "release_url": _optional_string(attrs.get("release_url")),
+        "update_available": True if state == "on" else False if state == "off" else None,
+    }
 
 
 def _signal_value(kind: str, signal: dict[str, Any]) -> int | float | str | None:
@@ -322,10 +361,20 @@ def _device_capabilities(
 ) -> tuple[str, list[str]]:
     domains = {e["domain"] for e in entities if not e.get("disabled")}
     classes = {e["device_class"] for e in entities if not e.get("disabled") and e.get("device_class")}
-    if "event" in domains or "button" in classes:
+    controllable_type = next(
+        (domain for domain in ("light", "switch", "camera", "cover", "climate", "fan", "lock") if domain in domains),
+        None,
+    )
+    if controllable_type:
+        device_type = controllable_type
+    elif domains & {"remote", "event"}:
         device_type = "remote"
+    elif domains & {"button", "input_button"} or "button" in classes:
+        device_type = "button"
+    elif "media_player" in domains and classes & {"tv", "television"}:
+        device_type = "tv"
     else:
-        device_type = next((d for d in ("light", "switch", "camera", "cover", "climate", "fan", "lock") if d in domains), "sensor" if domains & {"sensor", "binary_sensor"} else "other")
+        device_type = "sensor" if domains & {"sensor", "binary_sensor"} else "other"
     capabilities: set[str] = set()
     capabilities.update(kind for kind, signal in signals.items() if signal is not None)
     for kind, supported_classes in SIGNAL_CLASSES.items():
@@ -335,6 +384,8 @@ def _device_capabilities(
         capabilities.add("battery")
     if "event" in domains:
         capabilities.add("activity")
+    if any(e.get("domain") == "update" and e.get("device_class") == "firmware" and not e.get("disabled") for e in entities):
+        capabilities.add("firmware")
     if domains & {"light", "switch", "fan", "climate", "cover", "lock", "media_player", "vacuum", "valve"}:
         capabilities.update({"power_state", "control"})
     if any(

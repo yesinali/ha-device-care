@@ -94,23 +94,78 @@ async def main() -> None:
         assert len(guest.errors) == 2
 
         from homeassistant.helpers import entity_registry
-        fake_registry = SimpleNamespace(
-            async_get=lambda _entity_id: SimpleNamespace(domain="switch", entity_category="config")
-        )
+        current_entity = SimpleNamespace(domain="switch", entity_category="config")
+        current_state = SimpleNamespace(state="unavailable", attributes={})
+        fake_registry = SimpleNamespace(async_get=lambda _entity_id: current_entity)
         service_calls: list[tuple] = []
+
+        async def fake_async_call(*args, **kwargs):
+            service_calls.append((args, kwargs))
+
         fake_hass = SimpleNamespace(
-            states=SimpleNamespace(get=lambda _entity_id: SimpleNamespace(state="unavailable", attributes={})),
-            services=SimpleNamespace(async_call=lambda *args, **kwargs: service_calls.append((args, kwargs))),
+            states=SimpleNamespace(get=lambda _entity_id: current_state),
+            services=SimpleNamespace(async_call=fake_async_call),
         )
+        guest_control = Connection(is_admin=False)
+        with patch.object(entity_registry, "async_get", return_value=fake_registry):
+            await ws_call_entity.__wrapped__(
+                fake_hass,
+                guest_control,
+                {"id": 20, "type": "device_care/call_entity", "entity_id": "switch.test_config", "service": "turn_on", "controls_unlocked": True},
+            )
+        assert guest_control.errors and "Administrator" in guest_control.errors[0][-1]
+        locked_connection = Connection(is_admin=True)
+        with patch.object(entity_registry, "async_get", return_value=fake_registry):
+            await ws_call_entity.__wrapped__(
+                fake_hass,
+                locked_connection,
+                {"id": 21, "type": "device_care/call_entity", "entity_id": "switch.test_config", "service": "turn_on"},
+            )
+        assert locked_connection.errors and "unlock" in locked_connection.errors[0][-1]
         state_connection = Connection(is_admin=True)
         with patch.object(entity_registry, "async_get", return_value=fake_registry):
             await ws_call_entity.__wrapped__(
                 fake_hass,
                 state_connection,
-                {"id": 22, "type": "device_care/call_entity", "entity_id": "switch.test_config", "service": "turn_on"},
+                {"id": 22, "type": "device_care/call_entity", "entity_id": "switch.test_config", "service": "turn_on", "controls_unlocked": True},
             )
         assert state_connection.errors and "unavailable" in state_connection.errors[0][-1]
+
+        current_entity = SimpleNamespace(domain="switch", entity_category=None)
+        current_state = SimpleNamespace(state="off", attributes={})
+        config_connection = Connection(is_admin=True)
+        with patch.object(entity_registry, "async_get", return_value=fake_registry):
+            await ws_call_entity.__wrapped__(
+                fake_hass,
+                config_connection,
+                {"id": 23, "type": "device_care/call_entity", "entity_id": "switch.test_config", "service": "turn_on", "controls_unlocked": True},
+            )
+        assert config_connection.errors and "CONFIG" in config_connection.errors[0][-1]
+
+        current_entity = SimpleNamespace(domain="number", entity_category="config")
+        current_state = SimpleNamespace(state="5", attributes={"min": 0, "max": 10, "step": 1})
+        for request_id, invalid_value in enumerate((11, True, float("nan"), float("inf")), start=24):
+            limits_connection = Connection(is_admin=True)
+            with patch.object(entity_registry, "async_get", return_value=fake_registry):
+                await ws_call_entity.__wrapped__(
+                    fake_hass,
+                    limits_connection,
+                    {"id": request_id, "type": "device_care/call_entity", "entity_id": "number.test_config", "service": "set_value", "data": {"value": invalid_value}, "controls_unlocked": True},
+                )
+            assert limits_connection.errors and "limits" in limits_connection.errors[0][-1]
         assert service_calls == []
+
+        current_entity = SimpleNamespace(domain="switch", entity_category="config")
+        current_state = SimpleNamespace(state="off", attributes={})
+        unlocked_connection = Connection(is_admin=True)
+        with patch.object(entity_registry, "async_get", return_value=fake_registry):
+            await ws_call_entity.__wrapped__(
+                fake_hass,
+                unlocked_connection,
+                {"id": 28, "type": "device_care/call_entity", "entity_id": "switch.test_config", "service": "turn_on", "controls_unlocked": True},
+            )
+        assert unlocked_connection.results == [(28, {"success": True})]
+        assert len(service_calls) == 1 and service_calls[0][0][0:3] == ("switch", "turn_on", {"entity_id": "switch.test_config"})
 
         admin = Connection(is_admin=True)
         ws_get_data(hass, admin, {"id": 3, "type": "device_care/get_data"})

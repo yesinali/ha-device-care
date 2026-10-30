@@ -1,6 +1,7 @@
 """Authenticated, validated WebSocket API for the panel."""
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,6 +24,15 @@ _PREFERENCE_FIELDS = {
     "layout", "group_by", "sort", "visible_columns", "included_device_ids", "excluded_device_ids",
     "auto_include_new", "source_overrides", "expected_off_rules", "retention_days", "weekly_report_enabled", "scope", "scope_value",
 }
+
+
+def _is_finite_number(value: Any) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _runtime(hass):
@@ -241,11 +251,14 @@ async def ws_generate_report(hass, connection, msg):
     connection.send_result(msg["id"], await _get_report_data(hass, msg["window"]))
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/call_entity", vol.Required("entity_id"): str, vol.Required("service"): str, vol.Optional("data", default={}): dict})
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/call_entity", vol.Required("entity_id"): str, vol.Required("service"): str, vol.Optional("data", default={}): dict, vol.Optional("controls_unlocked", default=False): bool})
 @websocket_api.async_response
 async def ws_call_entity(hass, connection, msg):
     if not _admin(connection):
         connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "Administrator access required")
+        return
+    if msg.get("controls_unlocked") is not True:
+        connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "Explicit controls unlock is required")
         return
     from homeassistant.helpers import entity_registry
     entry = entity_registry.async_get(hass)
@@ -273,11 +286,14 @@ async def ws_call_entity(hass, connection, msg):
         attrs = state.attributes
         step = attrs.get("step")
         min_value = attrs.get("min", 0)
+        max_value = attrs.get("max")
+        invalid_limits = not _is_finite_number(min_value) or ("max" in attrs and not _is_finite_number(max_value))
         step_invalid = step is not None and (
-            not isinstance(step, (int, float)) or step <= 0 or
-            isinstance(value, (int, float)) and abs((value - min_value) / step - round((value - min_value) / step)) > 1e-8
+            not _is_finite_number(step) or step <= 0 or
+            _is_finite_number(value) and _is_finite_number(min_value) and _is_finite_number(step)
+            and abs((value - min_value) / step - round((value - min_value) / step)) > 1e-8
         )
-        if set(data) - {"entity_id", "value"} or not isinstance(value, (int, float)) or ("min" in attrs and value < attrs["min"]) or ("max" in attrs and value > attrs["max"]) or step_invalid:
+        if set(data) - {"entity_id", "value"} or not _is_finite_number(value) or invalid_limits or ("min" in attrs and value < min_value) or ("max" in attrs and value > max_value) or step_invalid:
             connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, "Value is outside the entity limits")
             return
     if domain == "select":

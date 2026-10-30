@@ -17,8 +17,8 @@ export class DeviceCareApi {
   generateReport(window: '24h' | '7d'): Promise<Report> {
     return this.connection.sendMessagePromise<Report>({ type: 'device_care/generate_report', window });
   }
-  callEntity(entity_id: string, service: string, data?: Record<string, unknown>): Promise<{ success: true }> {
-    return this.connection.sendMessagePromise({ type: 'device_care/call_entity', entity_id, service, ...(data ? { data } : {}) });
+  callEntity(entity_id: string, service: string, data?: Record<string, unknown>, controls_unlocked = false): Promise<{ success: true }> {
+    return this.connection.sendMessagePromise({ type: 'device_care/call_entity', entity_id, service, controls_unlocked, ...(data ? { data } : {}) });
   }
   async subscribe(onUpdate: (reason: string) => void): Promise<void> {
     await this.unsubscribe?.();
