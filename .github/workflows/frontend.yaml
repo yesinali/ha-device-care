@@ -1,0 +1,39 @@
+name: Frontend
+
+on:
+  push:
+    paths:
+      - "frontend-src/**"
+      - "custom_components/device_care/frontend/**"
+      - ".github/workflows/frontend.yaml"
+  pull_request:
+    paths:
+      - "frontend-src/**"
+      - "custom_components/device_care/frontend/**"
+      - ".github/workflows/frontend.yaml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-src/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend-src
+        run: npm ci
+      - name: Test, type check and build distributable panel
+        working-directory: frontend-src
+        run: |
+          npm test
+          npm run typecheck
+      - name: Check packaged bundle is committed and current
+        run: |
+          git ls-files --error-unmatch custom_components/device_care/frontend/device-care.js
+          git diff --exit-code -- custom_components/device_care/frontend/device-care.js

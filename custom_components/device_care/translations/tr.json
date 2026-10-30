@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Cihazlar & Bakım",
+        "description": "Home Assistant kayıt defterinden cihaz seçin.",
+        "data": {"scope": "Cihaz kapsamı", "auto_include_new": "Yeni cihazları otomatik dahil et"}
+      },
+      "selection": {
+        "title": "Cihaz kapsamını seçin",
+        "data": {"scope_value": "Kapsam değeri", "included_device_ids": "Cihazlar"}
+      },
+      "confirm": {
+        "title": "Seçimi onaylayın",
+        "description": "Seçiminiz {count} cihaz içeriyor.",
+        "data": {"confirm": "Kurulumu tamamla"}
+      }
+    },
+    "abort": {"no_scope_choices": "Bu kapsamda seçilebilir değer bulunamadı."}
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Cihazlar & Bakım seçenekleri",
+        "data": {"retention_days": "Olay saklama süresi (gün)"}
+      }
+    }
+  }
+}
